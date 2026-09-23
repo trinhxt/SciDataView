@@ -1,0 +1,2704 @@
+# ==============================================================================
+# SCRIPT: app.R
+# ==============================================================================
+# Purpose:
+#   Universal Tabular Dataset Summarizer & Profiler.
+#   Features:
+#     - Clean card layout with standard typography
+#     - Metric overview cards and column inventory
+#     - Missingness progress indicators and data quality screening flags
+#     - Numeric distributions with SVG sparklines, skewness, and Tukey outlier detection
+#     - Categorical level distributions
+#     - Pearson correlation matrix
+#     - Universal file reader (.csv, .tsv, .xlsx, .rds, .dta, .sav, .sas7bdat, .parquet, .feather, .arrow, .fst, .qs, .linear, etc.)
+#     - Automatic title/metadata row detection and skip with manual UI override
+#     - Interactive search in Data Inspector tab
+#     - Text report (.txt) and standalone offline HTML report (.html) export
+#     - Command-line batch execution: Rscript app.R [file]
+#
+# Date: 2026-09-23
+# ==============================================================================
+
+# ==============================================================================
+# SCIDATAVIEW - DESKTOP EDITION (OPTIMIZED LEAN RUNTIME)
+# ==============================================================================
+suppressPackageStartupMessages({
+  library(shiny)
+  library(bslib)
+  library(dplyr)
+  library(purrr)
+  library(tibble)
+  library(data.table)
+  library(readxl)
+  library(haven)
+  library(later)
+})
+# Set max upload size to 1 GB
+options(shiny.maxRequestSize = 2000 * 1024^2)
+
+# ==============================================================================
+# 1. CORE UTILITIES & UNIVERSAL FILE READER
+# ==============================================================================
+
+# Resolve output directory for batch reports
+resolve_output_dir <- function() {
+  candidates <- c("Output", "03-Output", "../Output", "../03-Output")
+  for (cand in candidates) {
+    if (dir.exists(cand)) return(cand)
+  }
+  "."
+}
+
+# Automatic header row / title skip detector
+detect_title_skip <- function(file_path, ext = NULL, sheet = 1, max_scan = 20) {
+  if (is.null(ext)) ext <- tolower(tools::file_ext(file_path))
+  
+  # Binary formats already have strict column schemas and no freeform title rows
+  if (ext %in% c("parquet", "feather", "arrow", "fst", "qs", "qs2", "rds", "dta", "sav", "sas7bdat")) {
+    return(0)
+  }
+  
+  preview <- tryCatch({
+    if (ext %in% c("xlsx", "xls")) {
+      suppressMessages(as.data.frame(readxl::read_excel(file_path, sheet = sheet, col_names = FALSE, n_max = max_scan)))
+    } else {
+      suppressWarnings(data.table::fread(file_path, header = FALSE, nrows = max_scan, data.table = FALSE))
+    }
+  }, error = function(e) NULL)
+  
+  if (is.null(preview) || nrow(preview) <= 1) return(0)
+  
+  scan_n <- min(nrow(preview), max_scan)
+  scores <- sapply(seq_len(scan_n), function(i) {
+    row <- as.character(unlist(preview[i, ]))
+    non_empty <- row[!is.na(row) & trimws(row) != ""]
+    n_col <- length(row)
+    if (length(non_empty) == 0) return(-5.0)
+    
+    fill_rate <- length(non_empty) / max(1, n_col)
+    uniq_rate <- length(unique(non_empty)) / max(1, length(non_empty))
+    num_vals  <- suppressWarnings(as.numeric(non_empty))
+    char_rate <- sum(is.na(num_vals)) / max(1, length(non_empty))
+    
+    score <- fill_rate * 2.5 + uniq_rate * 1.5 + char_rate * 1.0
+    if (fill_rate < 0.4 && n_col >= 3) score <- score - 3.0
+    score
+  })
+  
+  best_idx <- which.max(scores)
+  if (best_idx > 1 && scores[best_idx] > 2.0 && scores[best_idx] > (scores[1] + 0.5)) {
+    return(best_idx - 1)
+  }
+  
+  0
+}
+
+# Universal reader supporting all tabular data formats (with auto title skip and fread fallback)
+read_any_table <- function(file_path, sheet = 1, skip = "auto") {
+  if (!file.exists(file_path)) {
+    stop(sprintf("File does not exist: %s", file_path))
+  }
+  
+  ext <- tolower(tools::file_ext(file_path))
+  
+  skip_n <- if (identical(skip, "auto") || is.null(skip)) {
+    detect_title_skip(file_path, ext = ext, sheet = sheet)
+  } else {
+    as.integer(max(0, skip))
+  }
+  
+  res <- tryCatch({
+    switch(ext,
+      "csv"      = data.table::fread(file_path, skip = skip_n, data.table = FALSE, check.names = FALSE),
+      "tsv"      = data.table::fread(file_path, sep = "\t", skip = skip_n, data.table = FALSE, check.names = FALSE),
+      "txt"      = data.table::fread(file_path, skip = skip_n, data.table = FALSE, check.names = FALSE),
+      "xlsx"     = as.data.frame(readxl::read_excel(file_path, sheet = sheet, skip = skip_n)),
+      "xls"      = as.data.frame(readxl::read_excel(file_path, sheet = sheet, skip = skip_n)),
+      "rds"      = as.data.frame(readRDS(file_path)),
+      "dta"      = as.data.frame(haven::read_dta(file_path)),
+      "sav"      = as.data.frame(haven::read_spss(file_path)),
+      "sas7bdat" = as.data.frame(haven::read_sas(file_path)),
+      "parquet"  = as.data.frame(arrow::read_parquet(file_path)),
+      "feather"  = as.data.frame(arrow::read_feather(file_path)),
+      "arrow"    = as.data.frame(arrow::read_ipc_file(file_path)),
+      "fst"      = as.data.frame(fst::read_fst(file_path)),
+      "qs"       = as.data.frame(if (requireNamespace("qs2", quietly = TRUE)) qs2::qs_read(file_path) else qs::qread(file_path)),
+      "qs2"      = as.data.frame(qs2::qs_read(file_path)),
+      # Fallback for custom / bioinformatics / arbitrary extensions (.linear, .assoc, .raw, etc.)
+      {
+        data.table::fread(file_path, skip = skip_n, data.table = FALSE, check.names = FALSE)
+      }
+    )
+  }, error = function(e) {
+    stop(sprintf("Failed to read file '%s'%s: %s",
+                 basename(file_path),
+                 if (nzchar(ext)) paste0(" (format .", ext, ")") else "",
+                 e$message))
+  })
+  
+  if (!is.data.frame(res) || ncol(res) == 0) {
+    stop(sprintf("File '%s' was read but contains no valid tabular data or columns.", basename(file_path)))
+  }
+  
+  attr(res, "skip_rows") <- skip_n
+  res
+}
+
+# ==============================================================================
+# 2. STATISTICAL ENGINE: MOMENTS, OUTLIERS & VISUALIZERS (PHASE P1 & P2)
+# ==============================================================================
+
+# Fisher-Pearson sample skewness (subsampled to 5,000 for high-performance profiling)
+calc_skewness <- function(x) {
+  v <- x[!is.na(x)]
+  n <- length(v)
+  if (n < 3) return(NA_real_)
+  if (n > 5000) {
+    set.seed(42)
+    v <- sample(v, 5000)
+  }
+  m <- mean(v)
+  m2 <- mean((v - m)^2)
+  m3 <- mean((v - m)^3)
+  if (m2 == 0) return(0)
+  round(m3 / (m2^1.5), 2)
+}
+
+# Tukey's fences outlier detector (1.5 * IQR)
+calc_outliers <- function(x) {
+  v <- x[!is.na(x)]
+  n <- length(v)
+  if (n < 4) return(c(count = 0, pct = 0))
+  v_sub <- if (n > 10000) sample(v, 10000) else v
+  q <- quantile(v_sub, probs = c(0.25, 0.75), na.rm = TRUE)
+  iqr <- q[2] - q[1]
+  lower <- q[1] - 1.5 * iqr
+  upper <- q[2] + 1.5 * iqr
+  n_out <- sum(v < lower | v > upper)
+  c(count = n_out, pct = round(100 * n_out / n, 1))
+}
+
+# Self-contained SVG distribution sparkline (subsampled to 3,000 for instant 10x rendering)
+generate_svg_sparkline <- function(vals, width = 110, height = 24, fill = "#0071E3") {
+  v <- vals[!is.na(vals)]
+  if (length(v) < 2 || length(unique(v)) == 1) {
+    return("<span style='color:#86868B; font-size:11px;'>- (Constant)</span>")
+  }
+  
+  if (length(v) > 3000) {
+    set.seed(42)
+    v <- sample(v, 3000)
+  }
+  
+  h <- hist(v, breaks = 14, plot = FALSE)
+  counts <- h$counts
+  max_c <- max(counts)
+  if (max_c == 0) max_c <- 1
+  
+  n_bars <- length(counts)
+  bar_w <- round((width - (n_bars - 1) * 1.5) / n_bars, 1)
+  
+  rects <- character(n_bars)
+  for (i in seq_along(counts)) {
+    b_h <- round((counts[i] / max_c) * (height - 3), 1)
+    b_x <- (i - 1) * (bar_w + 1.5)
+    b_y <- height - b_h
+    rects[i] <- sprintf("<rect x='%.1f' y='%.1f' width='%.1f' height='%.1f' rx='1' fill='%s' />",
+                        b_x, b_y, bar_w, b_h, fill)
+  }
+  
+  sprintf("<svg width='%d' height='%d' viewBox='0 0 %d %d' style='display:inline-block; vertical-align:middle;'>%s</svg>",
+          width, height, width, height, paste(rects, collapse = ""))
+}
+
+# Visual Missingness progress bar (filled in proportion to Missingness percentage)
+generate_missing_bar <- function(pct) {
+  fill_color <- if (pct == 0) "#34C759" else if (pct < 10) "#0071E3" else if (pct < 50) "#FF9500" else "#FF3B30"
+  bar_width <- max(0, min(100, pct))
+  sprintf(
+    "<div style='display:flex; align-items:center; gap:8px;'>
+       <div style='flex:1; background:var(--app-bar-track, #E5E5EA); height:6px; border-radius:980px; overflow:hidden; min-width:45px;'>
+         <div style='background:%s; width:%.1f%%; height:100%%; border-radius:980px;'></div>
+       </div>
+       <span style='font-size:11px; font-variant-numeric:tabular-nums; color:var(--app-text, #1D1D1F); min-width:38px; text-align:right;'>%.1f%%</span>
+     </div>",
+    fill_color, bar_width, pct
+  )
+}
+
+# Bivariate scatter plot SVG with linear regression trend (Phase 3)
+generate_svg_bivariate <- function(x, y, x_name, y_name, width = 640, height = 240) {
+  valid <- !is.na(x) & !is.na(y) & is.finite(x) & is.finite(y)
+  xv <- as.numeric(x[valid])
+  yv <- as.numeric(y[valid])
+  n_pts <- length(xv)
+  if (n_pts < 3) {
+    return("<div style='padding:24px; color:var(--app-text-secondary); text-align:center;'>Insufficient valid numeric points to construct scatter preview.</div>")
+  }
+  
+  # Sample if dataset is large to maintain instant SVG rendering speed
+  if (n_pts > 600) {
+    set.seed(42)
+    idx <- sample(n_pts, 600)
+    xv_sub <- xv[idx]
+    yv_sub <- yv[idx]
+  } else {
+    xv_sub <- xv
+    yv_sub <- yv
+  }
+  
+  pad_l <- 65
+  pad_r <- 25
+  pad_t <- 20
+  pad_b <- 35
+  plot_w <- width - pad_l - pad_r
+  plot_h <- height - pad_t - pad_b
+  
+  min_x <- min(xv)
+  max_x <- max(xv)
+  min_y <- min(yv)
+  max_y <- max(yv)
+  if (max_x == min_x) max_x <- min_x + 1
+  if (max_y == min_y) max_y <- min_y + 1
+  
+  scale_x <- function(v) pad_l + ((v - min_x) / (max_x - min_x)) * plot_w
+  scale_y <- function(v) pad_t + plot_h - ((v - min_y) / (max_y - min_y)) * plot_h
+  
+  # Regression line
+  fit <- tryCatch(lm(yv ~ xv), error = function(e) NULL)
+  line_svg <- ""
+  if (!is.null(fit)) {
+    cf <- coef(fit)
+    if (!any(is.na(cf))) {
+      x_start <- min_x
+      x_end <- max_x
+      y_start <- cf[1] + cf[2] * x_start
+      y_end <- cf[1] + cf[2] * x_end
+      
+      px1 <- scale_x(x_start)
+      py1 <- scale_y(y_start)
+      px2 <- scale_x(x_end)
+      py2 <- scale_y(y_end)
+      line_svg <- sprintf("<line x1='%.1f' y1='%.1f' x2='%.1f' y2='%.1f' stroke='#FF9500' stroke-width='2.5' stroke-linecap='round' />",
+                          px1, py1, px2, py2)
+    }
+  }
+  
+  # Dots
+  cx <- scale_x(xv_sub)
+  cy <- scale_y(yv_sub)
+  dots <- sprintf("<circle cx='%.1f' cy='%.1f' r='3.2' fill='#0071E3' fill-opacity='0.45' />", cx, cy)
+  
+  # Grid lines & Axis labels
+  grid_svg <- sprintf(
+    "<line x1='%.1f' y1='%.1f' x2='%.1f' y2='%.1f' stroke='var(--app-border-strong)' stroke-width='1' />
+     <line x1='%.1f' y1='%.1f' x2='%.1f' y2='%.1f' stroke='var(--app-border-strong)' stroke-width='1' />
+     <text x='%.1f' y='%.1f' font-size='10' fill='var(--app-text-secondary)' text-anchor='middle'>%.2f</text>
+     <text x='%.1f' y='%.1f' font-size='10' fill='var(--app-text-secondary)' text-anchor='middle'>%.2f</text>
+     <text x='%.1f' y='%.1f' font-size='10' fill='var(--app-text-secondary)' text-anchor='end'>%.2f</text>
+     <text x='%.1f' y='%.1f' font-size='10' fill='var(--app-text-secondary)' text-anchor='end'>%.2f</text>
+     <text x='%.1f' y='%.1f' font-size='11' font-weight='600' fill='var(--app-text)' text-anchor='middle'>%s</text>
+     <text x='15' y='%.1f' font-size='11' font-weight='600' fill='var(--app-text)' text-anchor='middle' transform='rotate(-90, 15, %.1f)'>%s</text>",
+    pad_l, pad_t + plot_h, pad_l + plot_w, pad_t + plot_h,
+    pad_l, pad_t, pad_l, pad_t + plot_h,
+    pad_l, height - 10, min_x,
+    pad_l + plot_w, height - 10, max_x,
+    pad_l - 8, pad_t + plot_h + 4, min_y,
+    pad_l - 8, pad_t + 10, max_y,
+    pad_l + plot_w / 2, height - 2, x_name,
+    pad_t + plot_h / 2, pad_t + plot_h / 2, y_name
+  )
+  
+  sprintf(
+    "<svg width='100%%' height='%d' viewBox='0 0 %d %d' style='max-width:%dpx; overflow:visible; display:block; margin:0 auto;'>%s%s%s</svg>",
+    height, width, height, width, grid_svg, paste(dots, collapse = ""), line_svg
+  )
+}
+
+# Skeleton table placeholder UI generator
+render_skeleton_table <- function(rows = 5, cols = 4, message = "Computing statistics...") {
+  col_widths <- c("32%", "18%", "25%", "25%", "15%", "15%", "12%", "18%")
+  row_nodes <- lapply(seq_len(rows), function(i) {
+    cells <- lapply(seq_len(cols), function(j) {
+      w <- if (j <= length(col_widths)) col_widths[j] else "20%"
+      tags$div(class = "skeleton-shimmer skeleton-line", style = sprintf("width: %s;", w))
+    })
+    tags$div(class = "skeleton-row", cells)
+  })
+  
+  tags$div(
+    class = "skeleton-table-wrap",
+    tags$div(
+      style = "display: flex; align-items: center; gap: 8px; margin-bottom: 14px; font-size: 13px; color: var(--app-text-secondary);",
+      tags$div(class = "skeleton-shimmer", style = "width: 14px; height: 14px; border-radius: 50%;"),
+      tags$span(style = "font-weight: 500;", message)
+    ),
+    row_nodes
+  )
+}
+
+# ==============================================================================
+# 3. DATA QUALITY & HYGIENE SCREENING ENGINE
+# ==============================================================================
+
+check_hygiene_flags <- function(df, col_inv, num_summary = NULL, duplicates_n = NULL) {
+  flags <- list()
+  n_rows <- nrow(df)
+  
+  # 1. Zero Variance (Constant Columns)
+  const_cols <- col_inv$Column_Name[col_inv$Distinct_N <= 1]
+  if (length(const_cols) > 0) {
+    flags <- c(flags, list(list(
+      level = "critical",
+      title = "Zero-Variance Feature",
+      color = "#FF3B30",
+      bg    = "rgba(255, 59, 48, 0.08)",
+      desc  = sprintf("%d column(s) contain only 1 unique value (zero statistical variance): %s",
+                      length(const_cols), paste(head(const_cols, 4), collapse = ", "))
+    )))
+  }
+  
+  # 2. Severe Missingness (> 50%)
+  severe_miss <- col_inv %>% filter(Missing_Pct > 50)
+  if (nrow(severe_miss) > 0) {
+    flags <- c(flags, list(list(
+      level = "warning",
+      title = "Severe Missingness (>50%)",
+      color = "#FF9500",
+      bg    = "rgba(255, 149, 0, 0.08)",
+      desc  = sprintf("%d column(s) have more than half of records unrecorded: %s",
+                      nrow(severe_miss), paste(head(paste0(severe_miss$Column_Name, " (", severe_miss$Missing_Pct, "%)"), 4), collapse = ", "))
+    )))
+  }
+  
+  # 3. High-Cardinality Text (Potential Leak / Dirty ID)
+  high_card <- col_inv %>% filter(Data_Type %in% c("Text Variable", "Categorical String") & Distinct_N > (n_rows * 0.8) & Distinct_N != n_rows)
+  if (nrow(high_card) > 0) {
+    flags <- c(flags, list(list(
+      level = "info",
+      title = "High-Cardinality Text",
+      color = "#0071E3",
+      bg    = "rgba(0, 113, 227, 0.08)",
+      desc  = sprintf("%d text variable(s) have very high cardinality (>80%% unique): %s",
+                      nrow(high_card), paste(head(high_card$Column_Name, 3), collapse = ", "))
+    )))
+  }
+  
+  # 4. Zero-Inflated Continuous Features
+  if (!is.null(num_summary) && nrow(num_summary) > 0) {
+    zero_inf <- num_summary %>% filter(Zero_Count > (n_rows * 0.40))
+    if (nrow(zero_inf) > 0) {
+      flags <- c(flags, list(list(
+        level = "notice",
+        title = "Zero-Inflated Continuous",
+        color = "#AF52DE",
+        bg    = "rgba(175, 82, 222, 0.08)",
+        desc  = sprintf("%d continuous feature(s) contain over 40%% exact zero values: %s",
+                        nrow(zero_inf), paste(head(paste0(zero_inf$Variable, " (", round(100 * zero_inf$Zero_Count / n_rows, 1), "%)"), 3), collapse = ", "))
+      )))
+    }
+  }
+  
+  # 5. Duplicate Records (reuse precalculated count to avoid O(N*M) re-scanning)
+  dups <- if (!is.null(duplicates_n)) duplicates_n else sum(duplicated(df))
+  if (dups > 0) {
+    flags <- c(flags, list(list(
+      level = "warning",
+      title = "Duplicate Rows Detected",
+      color = "#FF9500",
+      bg    = "rgba(255, 149, 0, 0.08)",
+      desc  = sprintf("Found %s exact duplicate row(s) (%.2f%% of cohort).",
+                      format(dups, big.mark = ","), 100 * dups / n_rows)
+    )))
+  }
+  
+  # 6. Clean Bill of Health
+  if (length(flags) == 0) {
+    flags <- list(list(
+      level = "success",
+      title = "Data Quality Verified",
+      color = "#34C759",
+      bg    = "rgba(52, 199, 89, 0.08)",
+      desc  = "All screening checks passed. Zero constant columns, no severe missingness (>50%), and zero duplicate rows."
+    ))
+  }
+  
+  flags
+}
+
+# ==============================================================================
+# 4. UNIVERSAL DATASET PROFILING ENGINE (LAZY EVALUATION CAPABLE)
+# ==============================================================================
+
+# Modular compute helpers for lazy evaluation
+compute_numeric_profile <- function(df_proc, num_cols) {
+  if (length(num_cols) == 0) return(tibble())
+  map_dfr(num_cols, function(v) {
+    vals <- df_proc[[v]]
+    vals_c <- vals[!is.na(vals)]
+    if (length(vals_c) == 0) {
+      return(tibble(
+        Variable = v, Distribution_SVG = "<span style='color:#86868B;'>-</span>",
+        Mean = NA_real_, SD = NA_real_, Min = NA_real_,
+        Q1 = NA_real_, Median = NA_real_, Q3 = NA_real_, Max = NA_real_, IQR = NA_real_,
+        Skewness = NA_real_,
+        Outliers_N = 0, Outliers_Pct = 0.0,
+        Reporting_Hint = "Insufficient data", Zero_Count = 0
+      ))
+    }
+    q <- unname(quantile(vals_c, probs = c(0.25, 0.50, 0.75), na.rm = TRUE))
+    sk <- calc_skewness(vals_c)
+    out <- calc_outliers(vals_c)
+    
+    hint_str <- if (is.na(sk)) {
+      "Unknown"
+    } else if (abs(sk) <= 0.5) {
+      "Parametric: Mean (SD)"
+    } else if (abs(sk) <= 1.0) {
+      "Mild Skew: Mean (SD)"
+    } else {
+      "Skewed: Median [IQR]"
+    }
+    
+    tibble(
+      Variable         = v,
+      Distribution_SVG = generate_svg_sparkline(vals_c),
+      Mean             = round(mean(vals_c), 2),
+      SD               = round(sd(vals_c), 2),
+      Min              = round(min(vals_c), 2),
+      Q1               = round(q[1], 2),
+      Median           = round(q[2], 2),
+      Q3               = round(q[3], 2),
+      Max              = round(max(vals_c), 2),
+      IQR              = round(q[3] - q[1], 2),
+      Skewness         = sk,
+      Outliers_N       = as.integer(out["count"]),
+      Outliers_Pct     = as.numeric(out["pct"]),
+      Reporting_Hint   = hint_str,
+      Zero_Count       = sum(vals_c == 0)
+    )
+  })
+}
+
+compute_categorical_profile <- function(df_proc, cat_cols, n_rows) {
+  if (length(cat_cols) == 0) return(tibble())
+  map_dfr(cat_cols, function(v) {
+    vals <- as.character(df_proc[[v]])
+    tab <- sort(table(vals, useNA = "no"), decreasing = TRUE)
+    top_k <- head(tab, 5)
+    k_str <- paste(sprintf("%s: %s (%.1f%%)", names(top_k), format(as.numeric(top_k), big.mark = ","), 100 * as.numeric(top_k) / max(1, n_rows)), collapse = "; ")
+    if (length(tab) > 5) k_str <- paste0(k_str, sprintf(" [and %d more levels]", length(tab) - 5))
+    tibble(
+      Variable       = v,
+      Total_Levels   = length(tab),
+      Top_Categories = k_str
+    )
+  })
+}
+
+# Dimensionality guard: Limits correlation matrix to max_vars (default 35) by highest variance
+compute_cor_matrix <- function(df_proc, num_cols, max_vars = 35) {
+  if (length(num_cols) < 2) {
+    return(list(matrix = NULL, total_vars = 0, is_truncated = FALSE, displayed_n = 0))
+  }
+  
+  valid_cols <- num_cols[vapply(num_cols, function(col) length(unique(df_proc[[col]][!is.na(df_proc[[col]])])) > 1, logical(1))]
+  total_vars <- length(valid_cols)
+  if (total_vars < 2) {
+    return(list(matrix = NULL, total_vars = total_vars, is_truncated = FALSE, displayed_n = total_vars))
+  }
+  
+  is_truncated <- FALSE
+  if (total_vars > max_vars) {
+    is_truncated <- TRUE
+    vars_var <- vapply(valid_cols, function(col) {
+      v <- as.numeric(df_proc[[col]])
+      var(v[!is.na(v)])
+    }, numeric(1))
+    valid_cols <- names(sort(vars_var, decreasing = TRUE))[seq_len(max_vars)]
+  }
+  
+  c_mat <- round(cor(df_proc[, valid_cols, drop = FALSE], use = "pairwise.complete.obs"), 2)
+  list(matrix = c_mat, total_vars = total_vars, is_truncated = is_truncated, displayed_n = length(valid_cols))
+}
+
+profile_dataset <- function(df, type_overrides = list(), lazy = FALSE) {
+  n_rows  <- nrow(df)
+  n_cols  <- ncol(df)
+  
+  # Work on a working copy of df for downstream type conversion
+  df_proc <- df
+  # Unpack haven_labelled vectors (SPSS / Stata) to base types
+  for (nm in names(df_proc)) {
+    x_col <- df_proc[[nm]]
+    if (inherits(x_col, "haven_labelled")) {
+      df_proc[[nm]] <- tryCatch(as.vector(x_col), error = function(e) as.character(x_col))
+    }
+  }
+  
+  if (length(type_overrides) > 0) {
+    for (col_name in names(type_overrides)) {
+      if (col_name %in% names(df_proc)) {
+        target_t <- type_overrides[[col_name]]
+        if (target_t == "Continuous Numeric") {
+          df_proc[[col_name]] <- suppressWarnings(as.numeric(as.character(df_proc[[col_name]])))
+        } else if (target_t %in% c("Categorical String", "Discrete / Categorical", "Factor / Categorical", "Identifier (ID)", "Text Variable")) {
+          df_proc[[col_name]] <- as.character(df_proc[[col_name]])
+        } else if (target_t == "Date / Time") {
+          df_proc[[col_name]] <- suppressWarnings(as.Date(df_proc[[col_name]]))
+        }
+      }
+    }
+  }
+  
+  # Fast duplicate count (sample if massive > 200,000 rows to prevent freeze)
+  n_duplicates <- if (n_rows > 200000) {
+    set.seed(42)
+    s_idx <- sample(n_rows, 50000)
+    round(sum(duplicated(df_proc[s_idx, , drop = FALSE])) * (n_rows / 50000))
+  } else {
+    sum(duplicated(df_proc))
+  }
+  
+  n_cells      <- n_rows * n_cols
+  n_missing    <- sum(sapply(df_proc, function(x) sum(is.na(x) | x == "")))
+  missing_rate <- if (n_cells > 0) round((n_missing / n_cells) * 100, 2) else 0.0
+  
+  # Column inventory table with Data type diagnosis & visual missing progress bar
+  col_inv <- tibble(
+    Index        = seq_len(n_cols),
+    Column_Name  = names(df_proc),
+    Data_Type    = sapply(names(df_proc), function(nm) {
+      if (!is.null(type_overrides[[nm]])) {
+        return(type_overrides[[nm]])
+      }
+      x <- df_proc[[nm]]
+      if (inherits(x, c("Date", "POSIXt"))) {
+        "Date / Time"
+      } else if (is.numeric(x)) {
+        if (all(x == floor(x), na.rm = TRUE) && n_distinct(x, na.rm = TRUE) <= 6) {
+          "Discrete / Categorical"
+        } else if (grepl("id$|_id$|^id$", nm, ignore.case = TRUE) && n_distinct(x, na.rm = TRUE) > 50) {
+          "Identifier (ID)"
+        } else {
+          "Continuous Numeric"
+        }
+      } else if (is.factor(x) || is.logical(x)) {
+        "Factor / Categorical"
+      } else if (is.character(x)) {
+        if (n_distinct(x, na.rm = TRUE) <= 25) {
+          "Categorical String"
+        } else if (n_distinct(x, na.rm = TRUE) == n_rows) {
+          "Unique Key / ID"
+        } else {
+          "Text Variable"
+        }
+      } else {
+        class(x)[1]
+      }
+    }),
+    Is_Overridden = names(df_proc) %in% names(type_overrides),
+    Complete_N   = sapply(df_proc, function(x) sum(!is.na(x) & x != "")),
+    Missing_N    = sapply(df_proc, function(x) sum(is.na(x) | x == "")),
+    Missing_Pct  = round(100 * sapply(df_proc, function(x) sum(is.na(x) | x == "")) / max(1, n_rows), 1),
+    Distinct_N   = sapply(df_proc, function(x) n_distinct(x, na.rm = TRUE)),
+    Sample_Value = sapply(df_proc, function(x) {
+      valid <- x[!is.na(x) & x != ""]
+      if (length(valid) == 0) return("-")
+      val <- as.character(valid[1])
+      if (nchar(val) > 28) paste0(substr(val, 1, 25), "...") else val
+    })
+  ) %>%
+    mutate(
+      Missing_Bar = sapply(Missing_Pct, generate_missing_bar)
+    )
+  
+  # Identify numeric & categorical column candidates
+  non_num_types <- c("Identifier (ID)", "Unique Key / ID", "Categorical String", "Text Variable", "Discrete / Categorical", "Date / Time")
+  excluded_from_num <- col_inv$Column_Name[col_inv$Data_Type %in% non_num_types]
+  num_cols <- names(df_proc)[sapply(df_proc, is.numeric)]
+  num_cols <- setdiff(num_cols, excluded_from_num)
+  
+  non_cat_types <- c("Identifier (ID)", "Unique Key / ID", "Continuous Numeric", "Date / Time")
+  cat_candidates <- col_inv$Column_Name[!col_inv$Data_Type %in% non_cat_types]
+  cat_cols <- if (length(cat_candidates) > 0) {
+    cat_candidates[vapply(cat_candidates, function(v) {
+      x <- df_proc[[v]]
+      is.character(x) || is.factor(x) || is.logical(x) || (is.numeric(x) && n_distinct(x) <= 10)
+    }, FUN.VALUE = logical(1))]
+  } else {
+    character(0)
+  }
+  
+  num_summary <- if (!lazy) compute_numeric_profile(df_proc, num_cols) else NULL
+  cat_summary <- if (!lazy) compute_categorical_profile(df_proc, cat_cols, n_rows) else NULL
+  cor_res     <- if (!lazy) compute_cor_matrix(df_proc, num_cols) else NULL
+  
+  # Data Quality & Hygiene Screening
+  hygiene_flags <- check_hygiene_flags(df_proc, col_inv, num_summary, duplicates_n = n_duplicates)
+  
+  list(
+    rows          = n_rows,
+    cols          = n_cols,
+    duplicates    = n_duplicates,
+    missing_rate  = missing_rate,
+    memory        = format(object.size(df_proc), units = "auto"),
+    inventory     = col_inv,
+    num_cols      = num_cols,
+    cat_cols      = cat_cols,
+    numeric       = num_summary,
+    categorical   = cat_summary,
+    cor_matrix    = if (!is.null(cor_res)) cor_res$matrix else NULL,
+    cor_meta      = cor_res,
+    hygiene_flags = hygiene_flags,
+    skip_rows     = if (!is.null(attr(df, "skip_rows"))) attr(df, "skip_rows") else 0
+  )
+}
+
+# Helper to lazily hydrate full profile before generating text or HTML reports
+ensure_full_profile <- function(df, p) {
+  if (is.null(p$numeric)) {
+    p$numeric <- compute_numeric_profile(df, p$num_cols)
+  }
+  if (is.null(p$categorical)) {
+    p$categorical <- compute_categorical_profile(df, p$cat_cols, p$rows)
+  }
+  if (is.null(p$cor_matrix)) {
+    cor_res <- compute_cor_matrix(df, p$num_cols)
+    p$cor_matrix <- cor_res$matrix
+    p$cor_meta   <- cor_res
+  }
+  p
+}
+
+# ==============================================================================
+# 5. STANDALONE HTML REPORT & TEXT REPORT GENERATORS (P1, P2 & P3)
+# ==============================================================================
+
+# 1. Plain-text summary report
+generate_text_report <- function(file_name, p, df = NULL) {
+  if (is.null(p$numeric) && !is.null(df)) {
+    p <- ensure_full_profile(df, p)
+  }
+  lines <- character()
+  add_l <- function(...) lines <<- c(lines, sprintf(...))
+  add_box <- function(title) {
+    add_l("================================================================================")
+    add_l(title)
+    add_l("================================================================================")
+  }
+  
+  add_box(sprintf("DATA PROFILE SUMMARY: %s", basename(file_name)))
+  add_l("Generated: %s | Tool: Data Profiler", format(Sys.time(), "%Y-%m-%d %H:%M:%S"))
+  add_l("")
+  
+  # SECTION 1: OVERVIEW METRICS
+  add_box("SECTION 1: OVERVIEW METRICS")
+  add_l("Total Observations (Rows) : %s", format(p$rows, big.mark = ","))
+  add_l("Total Features (Columns)  : %s", format(p$cols, big.mark = ","))
+  add_l("In-Memory Footprint       : %s", p$memory)
+  add_l("Total Duplicate Rows      : %s", format(p$duplicates, big.mark = ","))
+  add_l("Overall Missing Cell Rate : %.2f%%", p$missing_rate)
+  if (isTRUE(p$skip_rows > 0)) {
+    add_l("Skipped Title Rows        : %d (Header at row %d)", p$skip_rows, p$skip_rows + 1)
+  }
+  add_l("")
+  
+  # SECTION 2: DATA QUALITY FLAGS
+  add_box("SECTION 2: DATA QUALITY & HYGIENE SCREENING")
+  for (flag in p$hygiene_flags) {
+    add_l("[%s] %s: %s", toupper(flag$level), flag$title, flag$desc)
+  }
+  add_l("")
+  
+  # SECTION 3: COLUMN INVENTORY
+  add_box("SECTION 3: COLUMN INVENTORY & CLASSIFICATION")
+  add_l("%-4s %-25s %-20s %-10s %-10s %-8s %-12s", "Idx", "Column Name", "Data type", "Complete", "Missing", "Miss %", "Distinct")
+  add_l("--------------------------------------------------------------------------------")
+  for (i in seq_len(nrow(p$inventory))) {
+    r <- p$inventory[i, ]
+    add_l("%-4d %-25s %-20s %-10s %-10s %-8.1f %-12s",
+          r$Index, substr(r$Column_Name, 1, 24), substr(r$Data_Type, 1, 19),
+          format(r$Complete_N, big.mark = ","), format(r$Missing_N, big.mark = ","),
+          r$Missing_Pct, format(r$Distinct_N, big.mark = ","))
+  }
+  add_l("")
+  
+  # SECTION 4: NUMERIC DISTRIBUTIONS & MOMENTS (P2)
+  if (nrow(p$numeric) > 0) {
+    add_box("SECTION 4: NUMERIC DISTRIBUTIONS, SKEWNESS & OUTLIERS")
+    add_l("%-20s %-16s %-16s %-7s %-12s", "Variable", "Mean (SD)", "Median [IQR]", "Skew", "Outliers")
+    add_l("--------------------------------------------------------------------------------")
+    for (i in seq_len(nrow(p$numeric))) {
+      nm <- p$numeric[i, ]
+      msd <- sprintf("%.1f (%.1f)", nm$Mean, nm$SD)
+      miqr <- sprintf("%.1f [%.1f]", nm$Median, nm$IQR)
+      out_str <- sprintf("%d (%.1f%%)", nm$Outliers_N, nm$Outliers_Pct)
+      add_l("%-20s %-16s %-16s %-7.2f %-12s",
+            substr(nm$Variable, 1, 19), msd, miqr, nm$Skewness, out_str)
+    }
+    add_l("")
+  }
+  
+  # SECTION 5: CATEGORICAL DISTRIBUTIONS
+  if (nrow(p$categorical) > 0) {
+    add_box("SECTION 5: CATEGORICAL & DISCRETE DISTRIBUTIONS")
+    for (i in seq_len(nrow(p$categorical))) {
+      c_row <- p$categorical[i, ]
+      add_l("Variable: %s (Levels: %d)", c_row$Variable, c_row$Total_Levels)
+      add_l("  Distribution: %s", c_row$Top_Categories)
+      add_l("")
+    }
+  }
+  
+  add_l("================================================================================")
+  add_l("END OF SUMMARY REPORT")
+  add_l("================================================================================")
+  
+  paste(lines, collapse = "\n")
+}
+
+# 2. Standalone Zero-Dependency HTML Report (Phase P1, P2 & P3)
+generate_html_report <- function(file_name, p, df = NULL) {
+  if (is.null(p$numeric) && !is.null(df)) {
+    p <- ensure_full_profile(df, p)
+  }
+  # Build hygiene alerts HTML
+  hygiene_html <- paste(sapply(p$hygiene_flags, function(f) {
+    sprintf(
+      "<div style='display:flex; align-items:flex-start; gap:12px; background:%s; border-radius:12px; padding:12px 16px; margin-bottom:8px;'>
+         <div style='font-size:12px; font-weight:700; color:%s; min-width:130px; text-transform:uppercase;'>%s</div>
+         <div style='font-size:13px; color:#1D1D1F; line-height:1.4;'>%s</div>
+       </div>",
+      f$bg, f$color, f$title, f$desc
+    )
+  }), collapse = "\n")
+  
+  # Build inventory table rows HTML (with Missingness header & bar)
+  inv_rows <- paste(sapply(seq_len(nrow(p$inventory)), function(i) {
+    r <- p$inventory[i, ]
+    type_badge <- if (isTRUE(r$Is_Overridden)) {
+      sprintf("<span style='font-size:11px; font-weight:600; background:rgba(0,113,227,0.12); color:#0071E3; padding:3px 8px; border-radius:980px;'>%s (Edited)</span>", r$Data_Type)
+    } else {
+      sprintf("<span style='font-size:11px; font-weight:600; background:#E8E8ED; color:#444446; padding:3px 8px; border-radius:980px;'>%s</span>", r$Data_Type)
+    }
+    sprintf(
+      "<tr>
+         <td style='color:#86868B; text-align:center;'>%d</td>
+         <td style='font-weight:600;'>%s</td>
+         <td>%s</td>
+         <td style='min-width:140px;'>%s</td>
+         <td style='text-align:right;'>%s</td>
+         <td style='text-align:right;'>%s</td>
+         <td style='color:#636366;'>%s</td>
+       </tr>",
+      r$Index, r$Column_Name, type_badge, r$Missing_Bar,
+      format(r$Complete_N, big.mark = ","), format(r$Distinct_N, big.mark = ","), r$Sample_Value
+    )
+  }), collapse = "\n")
+  
+  # Build numeric table rows HTML with Sparklines, Skewness & Outliers (P2)
+  num_rows <- if (nrow(p$numeric) > 0) {
+    paste(sapply(seq_len(nrow(p$numeric)), function(i) {
+      r <- p$numeric[i, ]
+      out_color <- if (r$Outliers_Pct > 5) "#FF3B30" else if (r$Outliers_Pct > 0) "#FF9500" else "#86868B"
+      
+      sprintf(
+        "<tr>
+           <td style='font-weight:600;'>%s</td>
+           <td style='text-align:center;'>%s</td>
+           <td><strong>%.1f</strong> (%.1f)</td>
+           <td><strong>%.1f</strong> [%.1f]</td>
+           <td>%.1f</td>
+           <td>%.1f</td>
+           <td style='font-feature-settings:\"tnum\";'>%.2f</td>
+           <td style='color:%s; font-weight:600;'>%s (%.1f%%)</td>
+         </tr>",
+        r$Variable, r$Distribution_SVG, r$Mean, r$SD, r$Median, r$IQR, r$Min, r$Max,
+        r$Skewness, out_color, format(r$Outliers_N, big.mark = ","), r$Outliers_Pct
+      )
+    }), collapse = "\n")
+  } else {
+    "<tr><td colspan='8' style='text-align:center; color:#86868B;'>No numeric features found.</td></tr>"
+  }
+  
+  # Build categorical table rows HTML
+  cat_rows <- if (nrow(p$categorical) > 0) {
+    paste(sapply(seq_len(nrow(p$categorical)), function(i) {
+      r <- p$categorical[i, ]
+      sprintf(
+        "<tr>
+           <td style='font-weight:600;'>%s</td>
+           <td style='text-align:center;'><span style='background:#E8E8ED; padding:3px 8px; border-radius:980px; font-weight:600; font-size:11px;'>%d</span></td>
+           <td style='color:#333336;'>%s</td>
+         </tr>",
+        r$Variable, r$Total_Levels, r$Top_Categories
+      )
+    }), collapse = "\n")
+  } else {
+    "<tr><td colspan='3' style='text-align:center; color:#86868B;'>No categorical features found.</td></tr>"
+  }
+  
+  # Build correlation matrix HTML
+  cor_html <- if (!is.null(p$cor_matrix)) {
+    c_mat <- p$cor_matrix
+    vars <- colnames(c_mat)
+    
+    header_ths <- paste(sprintf("<th style='font-size:10px; padding:6px 8px; text-align:center;'>%s</th>", substr(vars, 1, 10)), collapse = "")
+    
+    matrix_rows <- paste(sapply(seq_along(vars), function(row_i) {
+      cells <- sapply(seq_along(vars), function(col_j) {
+        if (row_i == col_j) {
+          return("<td style='background:#F5F5F7; color:#86868B; text-align:center; font-size:12px; font-weight:600;'>-</td>")
+        }
+        val <- c_mat[row_i, col_j]
+        if (is.na(val)) return("<td style='background:#FAFAFC; color:#86868B; text-align:center;'>-</td>")
+        
+        intensity <- abs(val)
+        bg_col <- if (val > 0) {
+          sprintf("background:rgba(230, 75, 53, %.2f); color:%s;", intensity * 0.85, if(intensity > 0.5) "#FFF" else "#1D1D1F")
+        } else {
+          sprintf("background:rgba(0, 160, 135, %.2f); color:%s;", intensity * 0.85, if(intensity > 0.5) "#FFF" else "#1D1D1F")
+        }
+        
+        strong_tag <- if (abs(val) >= 0.70) "font-weight:700; text-decoration:underline;" else ""
+        sprintf("<td style='padding:6px 8px; text-align:center; font-size:11px; %s %s'>%.2f</td>", bg_col, strong_tag, val)
+      })
+      sprintf("<tr><td style='font-weight:600; font-size:11px; padding:6px 10px;'>%s</td>%s</tr>", vars[row_i], paste(cells, collapse = ""))
+    }), collapse = "\n")
+    
+    sprintf(
+      "<div style='overflow-x:auto;'>
+         <table>
+           <thead><tr><th>Feature</th>%s</tr></thead>
+           <tbody>%s</tbody>
+         </table>
+         <div style='font-size:11px; color:#86868B; margin-top:8px;'>
+           * Pearson correlation coefficient r [-1.0 to 1.0]. Diagonal indicates self-correlation (-). Color scale: Red (+1.0) and Teal (-1.0). Underlined bold entries indicate strong collinearity (|r| &ge; 0.70).
+         </div>
+       </div>",
+      header_ths, matrix_rows
+    )
+  } else {
+    "<div style='color:#86868B; padding:16px;'>Insufficient numeric variables to compute correlation matrix.</div>"
+  }
+  
+  # Assemble complete standalone HTML
+  sprintf(
+'<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Data Profile Report: %s</title>
+  <style>
+    :root {
+      --app-bg: #F5F5F7;
+      --app-card: #FFFFFF;
+      --app-blue: #0071E3;
+      --app-text: #1D1D1F;
+      --app-text-secondary: #86868B;
+      --app-border: rgba(0, 0, 0, 0.08);
+      --app-radius: 16px;
+      --app-shadow: 0 4px 24px rgba(0, 0, 0, 0.04);
+    }
+    body {
+      background: var(--app-bg);
+      color: var(--app-text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      margin: 0;
+      padding: 32px 24px;
+      -webkit-font-smoothing: antialiased;
+    }
+    .container { max-width: 1360px; margin: 0 auto; }
+    .header {
+      background: rgba(255, 255, 255, 0.9);
+      backdrop-filter: blur(20px);
+      border-radius: var(--app-radius);
+      border: 1px solid var(--app-border);
+      padding: 20px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+      box-shadow: var(--app-shadow);
+    }
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .kpi-card {
+      background: var(--app-card);
+      border-radius: 14px;
+      border: 1px solid var(--app-border);
+      padding: 16px 20px;
+      box-shadow: var(--app-shadow);
+    }
+    .kpi-label { font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--app-text-secondary); letter-spacing: 0.05em; }
+    .kpi-val { font-size: 26px; font-weight: 700; color: var(--app-text); margin: 4px 0 0; font-feature-settings: "tnum"; }
+    .card {
+      background: var(--app-card);
+      border-radius: var(--app-radius);
+      border: 1px solid var(--app-border);
+      padding: 24px;
+      box-shadow: var(--app-shadow);
+      margin-bottom: 24px;
+    }
+    .card-title { font-size: 16px; font-weight: 600; margin: 0 0 16px; color: var(--app-text); }
+    table { width: 100%%; border-collapse: collapse; font-size: 13px; text-align: left; }
+    th {
+      background: #F9FAFB;
+      color: #4B5563;
+      font-weight: 600;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--app-border);
+    }
+    td {
+      padding: 10px 14px;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+      font-feature-settings: "tnum";
+      vertical-align: middle;
+    }
+    tr:nth-child(even) { background: #FAFAFC; }
+    tr:hover { background: rgba(0, 113, 227, 0.03); }
+    .footer { text-align: center; font-size: 12px; color: var(--app-text-secondary); margin-top: 32px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div>
+        <h1 style="font-size: 20px; margin: 0 0 4px; font-weight: 600;">Data Profile Report</h1>
+        <div style="font-size: 13px; color: var(--app-text-secondary);">Source File: <strong>%s</strong> | Generated: %s%s</div>
+      </div>
+    </div>
+
+    <!-- Overview KPIs -->
+    <div class="kpi-grid">
+      <div class="kpi-card"><div class="kpi-label">Observations (N)</div><div class="kpi-val">%s</div></div>
+      <div class="kpi-card"><div class="kpi-label">Variables (P)</div><div class="kpi-val">%s</div></div>
+      <div class="kpi-card"><div class="kpi-label">Memory Footprint</div><div class="kpi-val">%s</div></div>
+      <div class="kpi-card"><div class="kpi-label">Missing Cell Rate</div><div class="kpi-val">%.2f%%</div></div>
+      <div class="kpi-card"><div class="kpi-label">Duplicate Rows</div><div class="kpi-val">%s</div></div>
+    </div>
+
+    <!-- Data Quality Screening Flags -->
+    <div class="card">
+      <div class="card-title">Data Quality &amp; Hygiene Screening</div>
+      %s
+    </div>
+
+    <!-- Column Inventory Table with Missingness Bars -->
+    <div class="card">
+      <div class="card-title">Column Inventory &amp; Missingness</div>
+      <div style="overflow-x: auto;">
+        <table>
+          <thead>
+            <tr>
+              <th style="text-align:center;">#</th>
+              <th>Column Name</th>
+              <th>Data type</th>
+              <th>Missingness</th>
+              <th style="text-align:right;">Complete N</th>
+              <th style="text-align:right;">Distinct</th>
+              <th>Sample Value</th>
+            </tr>
+          </thead>
+          <tbody>%s</tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Numeric Distributions Table with Sparklines, Moments & Outliers (P2) -->
+    <div class="card">
+      <div class="card-title">Numeric Features, Distribution Sparklines &amp; Outliers</div>
+      <div style="overflow-x: auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Variable</th>
+              <th style="text-align:center; min-width:120px;">Distribution</th>
+              <th>Mean (SD)</th>
+              <th>Median [IQR]</th>
+              <th>Min</th>
+              <th>Max</th>
+              <th>Skewness</th>
+              <th>Outliers</th>
+            </tr>
+          </thead>
+          <tbody>%s</tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Categorical Breakdown Table -->
+    <div class="card">
+      <div class="card-title">Categorical &amp; Discrete Variables</div>
+      <div style="overflow-x: auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Variable</th>
+              <th style="text-align:center;">Total Levels</th>
+              <th>Frequency Breakdown (Top Levels)</th>
+            </tr>
+          </thead>
+          <tbody>%s</tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Correlation Matrix (P3) -->
+    <div class="card">
+      <div class="card-title">Correlation Matrix (Pearson)</div>
+      %s
+    </div>
+
+    <div class="footer">
+      Data Profile Report | Generated: %s | Standalone HTML
+    </div>
+  </div>
+</body>
+</html>',
+    basename(file_name), basename(file_name), format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
+    if (isTRUE(p$skip_rows > 0)) sprintf(" | Skipped %d title row(s)", p$skip_rows) else "",
+    format(p$rows, big.mark = ","), format(p$cols, big.mark = ","), p$memory, p$missing_rate, format(p$duplicates, big.mark = ","),
+    hygiene_html, inv_rows, num_rows, cat_rows, cor_html,
+    format(Sys.time(), "%Y-%m-%d %H:%M:%S")
+  )
+}
+
+# ==============================================================================
+# 6. APPLICATION STYLING & USER INTERFACE (UI)
+# ==============================================================================
+
+app_css <- "
+:root {
+  --app-bg: #F5F5F7;
+  --app-card: #FFFFFF;
+  --app-navbar-bg: rgba(255, 255, 255, 0.85);
+  --app-blue: #0071E3;
+  --app-blue-hover: #0077ED;
+  --app-blue-soft: rgba(0, 113, 227, 0.08);
+  --app-text: #1D1D1F;
+  --app-text-secondary: #86868B;
+  --app-border: rgba(0, 0, 0, 0.06);
+  --app-border-strong: rgba(0, 0, 0, 0.12);
+  --app-radius-lg: 18px;
+  --app-radius-md: 12px;
+  --app-radius-pill: 980px;
+  --app-shadow: 0 4px 24px rgba(0, 0, 0, 0.03), 0 1px 2px rgba(0, 0, 0, 0.02);
+  --app-shadow-hover: 0 8px 30px rgba(0, 0, 0, 0.06);
+  --app-table-th: #F9FAFB;
+  --app-table-th-text: #4B5563;
+  --app-table-odd: #FFFFFF;
+  --app-table-even: #FAFAFC;
+  --app-table-hover: rgba(0, 113, 227, 0.04);
+  --app-tabs-bg: #EBEBED;
+  --app-tabs-active-bg: #FFFFFF;
+  --app-dropzone-bg: #FAFAFC;
+  --app-dropzone-border: #D2D2D7;
+  --app-btn-secondary-bg: #E8E8ED;
+  --app-btn-secondary-text: #1D1D1F;
+  --app-badge-bg: #E8E8ED;
+  --app-badge-text: #444446;
+  --app-input-bg: #FFFFFF;
+  --app-subbox-bg: #F5F5F7;
+  --app-bar-track: #E5E5EA;
+}
+
+[data-theme='dark'] {
+  --app-bg: #121214;
+  --app-card: #1C1C1E;
+  --app-navbar-bg: rgba(28, 28, 30, 0.85);
+  --app-blue: #0A84FF;
+  --app-blue-hover: #409CFF;
+  --app-blue-soft: rgba(10, 132, 255, 0.15);
+  --app-text: #F5F5F7;
+  --app-text-secondary: #98989D;
+  --app-border: rgba(255, 255, 255, 0.08);
+  --app-border-strong: rgba(255, 255, 255, 0.15);
+  --app-shadow: 0 4px 24px rgba(0, 0, 0, 0.35), 0 1px 2px rgba(0, 0, 0, 0.2);
+  --app-shadow-hover: 0 8px 30px rgba(0, 0, 0, 0.45);
+  --app-table-th: #252528;
+  --app-table-th-text: #A1A1A6;
+  --app-table-odd: #1C1C1E;
+  --app-table-even: #222225;
+  --app-table-hover: rgba(10, 132, 255, 0.12);
+  --app-tabs-bg: #2C2C2E;
+  --app-tabs-active-bg: #3A3A3C;
+  --app-dropzone-bg: #222225;
+  --app-dropzone-border: #3A3A3C;
+  --app-btn-secondary-bg: #2C2C2E;
+  --app-btn-secondary-text: #F5F5F7;
+  --app-badge-bg: #2C2C2E;
+  --app-badge-text: #D1D1D6;
+  --app-input-bg: #222225;
+  --app-subbox-bg: #222225;
+  --app-bar-track: #3A3A3C;
+}
+
+body {
+  background-color: var(--app-bg) !important;
+  color: var(--app-text) !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif !important;
+  -webkit-font-smoothing: antialiased;
+  margin: 0;
+  padding: 0;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.app-navbar {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  background: var(--app-navbar-bg);
+  border-bottom: 1px solid var(--app-border-strong);
+  padding: 12px 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.app-brand { display: flex; align-items: center; gap: 12px; }
+
+.app-logo-badge {
+  width: 32px;
+  height: 32px;
+  background: linear-gradient(135deg, #0071E3, #30B0C7);
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 700;
+  font-size: 15px;
+  box-shadow: 0 2px 8px rgba(0, 113, 227, 0.25);
+}
+
+.app-title-main { font-size: 18px; font-weight: 600; letter-spacing: -0.02em; color: var(--app-text); margin: 0; }
+
+.app-content-wrap { max-width: 1440px; margin: 0 auto; padding: 24px 32px 48px; }
+
+.app-card {
+  background: var(--app-card);
+  border-radius: var(--app-radius-lg);
+  border: 1px solid var(--app-border);
+  box-shadow: var(--app-shadow);
+  padding: 24px;
+  color: var(--app-text);
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.app-dropzone {
+  border: 2px dashed var(--app-dropzone-border);
+  border-radius: var(--app-radius-md);
+  padding: 20px 16px;
+  text-align: center;
+  background: var(--app-dropzone-bg);
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.app-dropzone:hover { border-color: var(--app-blue); background: var(--app-blue-soft); }
+
+.btn-app-primary {
+  background: var(--app-blue) !important;
+  color: white !important;
+  border: none !important;
+  border-radius: var(--app-radius-pill) !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  padding: 8px 18px !important;
+  letter-spacing: -0.01em !important;
+  transition: all 0.2s ease !important;
+}
+
+.btn-app-primary:hover {
+  background: var(--app-blue-hover) !important;
+  transform: translateY(-1px);
+}
+
+.btn-app-secondary {
+  background: var(--app-btn-secondary-bg) !important;
+  color: var(--app-btn-secondary-text) !important;
+  border: 1px solid var(--app-border) !important;
+  border-radius: var(--app-radius-pill) !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  padding: 8px 18px !important;
+  transition: all 0.2s ease !important;
+}
+
+.btn-app-secondary:hover {
+  background: var(--app-border-strong) !important;
+}
+
+.btn-theme-toggle {
+  background: var(--app-card);
+  color: var(--app-text);
+  border: 1px solid var(--app-border-strong);
+  border-radius: var(--app-radius-pill);
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.2s ease;
+}
+
+.btn-theme-toggle:hover {
+  background: var(--app-blue-soft);
+  color: var(--app-blue);
+  border-color: var(--app-blue);
+  transform: scale(1.05);
+}
+
+.app-kpi-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; margin-bottom: 24px; }
+.app-kpi-card { background: var(--app-card); border-radius: var(--app-radius-md); border: 1px solid var(--app-border); padding: 18px 20px; box-shadow: var(--app-shadow); transition: background 0.2s ease, border-color 0.2s ease; }
+.app-kpi-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--app-text-secondary); margin-bottom: 6px; }
+.app-kpi-val { font-size: 26px; font-weight: 700; color: var(--app-text); font-feature-settings: 'tnum'; margin: 0; }
+.app-kpi-sub { font-size: 11px; color: var(--app-text-secondary); margin-top: 4px; }
+
+.nav-tabs { border-bottom: none !important; background: var(--app-tabs-bg); border-radius: 12px; padding: 4px; display: inline-flex; gap: 4px; margin-bottom: 20px; transition: background 0.2s ease; }
+.nav-tabs > li > a { border: none !important; border-radius: 9px !important; color: var(--app-text-secondary) !important; font-size: 13px !important; font-weight: 500 !important; padding: 7px 16px !important; background: transparent !important; }
+.nav-tabs > li.active > a, .nav-tabs > li > a.active { background: var(--app-tabs-active-bg) !important; color: var(--app-text) !important; font-weight: 600 !important; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08) !important; }
+
+.app-table-wrap { border-radius: var(--app-radius-md); border: 1px solid var(--app-border-strong); overflow-x: auto; background: var(--app-card); transition: background 0.2s ease, border-color 0.2s ease; }
+.table { margin-bottom: 0 !important; font-size: 13px !important; color: var(--app-text) !important; }
+.table > thead > tr > th { background: var(--app-table-th) !important; color: var(--app-table-th-text) !important; font-weight: 600 !important; font-size: 11px !important; text-transform: uppercase !important; letter-spacing: 0.05em !important; padding: 12px 16px !important; border-bottom: 1px solid var(--app-border-strong) !important; border-top: none !important; }
+.table > tbody > tr > td { padding: 12px 16px !important; border-bottom: 1px solid var(--app-border) !important; border-top: none !important; font-feature-settings: 'tnum'; vertical-align: middle !important; color: var(--app-text) !important; }
+.table > tbody > tr:nth-of-type(odd) { background-color: var(--app-table-odd) !important; }
+.table > tbody > tr:nth-of-type(even) { background-color: var(--app-table-even) !important; }
+.table > tbody > tr:hover { background-color: var(--app-table-hover) !important; }
+
+.app-terminal { background: #1C1C1E; color: #98D0FF; border-radius: var(--app-radius-md); padding: 20px; font-family: 'SF Mono', Monaco, Menlo, Consolas, monospace !important; font-size: 12px; line-height: 1.5; max-height: 550px; overflow-y: auto; border: 1px solid rgba(255, 255, 255, 0.08); }
+
+/* Form inputs & controls in Dark Mode */
+[data-theme='dark'] .form-control,
+[data-theme='dark'] .form-select,
+[data-theme='dark'] input[type='text'],
+[data-theme='dark'] input[type='number'],
+[data-theme='dark'] .selectize-input {
+  background-color: var(--app-input-bg) !important;
+  color: var(--app-text) !important;
+  border-color: var(--app-border-strong) !important;
+}
+[data-theme='dark'] .selectize-input input {
+  color: var(--app-text) !important;
+}
+[data-theme='dark'] .selectize-dropdown {
+  background-color: var(--app-card) !important;
+  color: var(--app-text) !important;
+  border: 1px solid var(--app-border-strong) !important;
+}
+[data-theme='dark'] .selectize-dropdown .active {
+  background-color: var(--app-blue) !important;
+  color: #FFFFFF !important;
+}
+[data-theme='dark'] .selectize-dropdown .option {
+  color: var(--app-text) !important;
+}
+[data-theme='dark'] .selectize-dropdown .option:hover {
+  background-color: var(--app-blue-soft) !important;
+}
+[data-theme='dark'] pre.shiny-text-output,
+[data-theme='dark'] pre {
+  background-color: var(--app-card) !important;
+  color: #98D0FF !important;
+  border: 1px solid var(--app-border-strong) !important;
+}
+
+/* Type Override Toolbar & Select Controls */
+.type-override-toolbar {
+  background: var(--app-subbox-bg);
+  border: 1px solid var(--app-border);
+  border-radius: 12px;
+  padding: 10px 16px;
+  margin-bottom: 18px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+.type-override-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+}
+
+.type-override-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--app-text);
+  white-space: nowrap;
+  height: 36px;
+}
+
+.type-override-label svg {
+  color: var(--app-blue);
+  flex-shrink: 0;
+}
+
+.type-override-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 36px;
+  color: var(--app-text-secondary);
+  flex-shrink: 0;
+}
+
+.type-override-select-wrap {
+  display: inline-flex;
+  align-items: center;
+}
+
+.type-override-toolbar .shiny-input-container {
+  margin-bottom: 0 !important;
+  padding: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  width: 100% !important;
+}
+
+.type-override-toolbar .shiny-input-container > div {
+  width: 100% !important;
+  display: inline-flex !important;
+  align-items: center !important;
+}
+
+.type-override-toolbar select.shiny-input-select,
+.type-override-toolbar select.form-control,
+.type-override-toolbar select {
+  height: 36px !important;
+  min-height: 36px !important;
+  padding: 6px 34px 6px 12px !important;
+  border-radius: 8px !important;
+  border: 1px solid var(--app-border-strong) !important;
+  background-color: var(--app-card) !important;
+  color: var(--app-text) !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  line-height: 22px !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
+  background-image: url(\"data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%2386868B' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e\") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 10px center !important;
+  background-size: 12px 10px !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+}
+
+.type-override-toolbar select:hover {
+  border-color: var(--app-blue) !important;
+}
+
+.type-override-toolbar select:focus {
+  border-color: var(--app-blue) !important;
+  box-shadow: 0 0 0 3px var(--app-blue-soft) !important;
+  outline: none !important;
+}
+
+.type-override-btn {
+  height: 36px !important;
+  padding: 0 16px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  border-radius: 8px !important;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+  line-height: 36px !important;
+}
+
+[data-theme='dark'] .type-override-toolbar select {
+  background-color: var(--app-input-bg) !important;
+  border-color: var(--app-border-strong) !important;
+  color: var(--app-text) !important;
+  background-image: url(\"data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%2398989D' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e\") !important;
+}
+
+[data-theme='dark'] .type-override-toolbar select option {
+  background-color: var(--app-card) !important;
+  color: var(--app-text) !important;
+}
+
+/* Real-time Busy / Processing Indicator */
+.app-busy-indicator {
+  display: none;
+  align-items: center;
+  gap: 7px;
+  background: var(--app-card);
+  border: 1px solid var(--app-border-strong);
+  border-radius: var(--app-radius-pill);
+  padding: 5px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--app-blue);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+html.shiny-busy .app-busy-indicator {
+  display: inline-flex !important;
+}
+
+/* Interactive Correlation Matrix Cells */
+.cell-cor-interactive {
+  cursor: pointer !important;
+  transition: transform 0.15s ease, box-shadow 0.15s ease !important;
+}
+.cell-cor-interactive:hover {
+  outline: 2px solid var(--app-blue) !important;
+  outline-offset: -2px !important;
+  transform: scale(1.06) !important;
+  z-index: 10 !important;
+  position: relative !important;
+}
+
+/* Sortable Column Inventory Headers */
+.sortable-th {
+  cursor: pointer !important;
+  user-select: none !important;
+  transition: color 0.15s ease, background-color 0.15s ease !important;
+}
+.sortable-th:hover {
+  color: var(--app-blue) !important;
+  background-color: var(--app-blue-soft) !important;
+}
+
+/* Data Inspector Unified Search & Pagination Bar */
+.inspect-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.inspect-search-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 280px;
+}
+
+.inspect-search-icon {
+  position: absolute;
+  left: 12px;
+  width: 14px;
+  height: 14px;
+  color: var(--app-text-secondary);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.inspect-search-wrap .form-group {
+  margin-bottom: 0 !important;
+  width: 100% !important;
+}
+
+.inspect-search-wrap input.form-control,
+#tbl_search {
+  height: 32px !important;
+  min-height: 32px !important;
+  padding: 0 14px 0 34px !important;
+  background-color: var(--app-subbox-bg) !important;
+  border: 1px solid var(--app-border-strong) !important;
+  border-radius: var(--app-radius-pill) !important;
+  color: var(--app-text) !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  line-height: 30px !important;
+  box-shadow: none !important;
+  transition: all 0.2s ease !important;
+}
+
+.inspect-search-wrap input.form-control::placeholder,
+#tbl_search::placeholder {
+  color: var(--app-text-secondary) !important;
+  opacity: 0.8 !important;
+}
+
+.inspect-search-wrap input.form-control:focus,
+#tbl_search:focus {
+  background-color: var(--app-card) !important;
+  border-color: var(--app-blue) !important;
+  box-shadow: 0 0 0 3px var(--app-blue-soft) !important;
+  outline: none !important;
+}
+
+.inspect-pagination-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-inspect-page {
+  height: 32px !important;
+  min-width: 32px !important;
+  padding: 0 11px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  border-radius: var(--app-radius-pill) !important;
+  background: var(--app-btn-secondary-bg) !important;
+  color: var(--app-btn-secondary-text) !important;
+  border: 1px solid var(--app-border-strong) !important;
+  transition: all 0.15s ease !important;
+}
+
+.btn-inspect-page:hover:not([disabled]) {
+  background: var(--app-blue-soft) !important;
+  border-color: var(--app-blue) !important;
+  color: var(--app-blue) !important;
+}
+
+.btn-inspect-page[disabled] {
+  opacity: 0.4 !important;
+  cursor: not-allowed !important;
+}
+
+.inspect-page-indicator {
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  background: var(--app-subbox-bg);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-pill);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--app-text-secondary);
+  white-space: nowrap;
+}
+
+/* Skeleton Shimmer Loaders */
+@keyframes app-skeleton-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--app-subbox-bg) 25%,
+    var(--app-border) 37%,
+    var(--app-subbox-bg) 63%
+  );
+  background-size: 400% 100%;
+  animation: app-skeleton-shimmer 1.4s ease infinite;
+  border-radius: 4px;
+}
+
+.skeleton-line {
+  height: 14px;
+  margin: 6px 0;
+}
+
+.skeleton-table-wrap {
+  width: 100%;
+  padding: 16px 20px;
+  background: var(--app-card-bg);
+  border-radius: var(--app-radius-md);
+  border: 1px solid var(--app-border);
+}
+
+.skeleton-row {
+  display: flex;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--app-border);
+}
+
+.skeleton-row:last-child {
+  border-bottom: none;
+}
+"
+
+ui <- fluidPage(
+  title = "SciDataView - Universal Scientific Data Profiler",
+  theme = bslib::bs_theme(version = 5),
+  tags$head(
+    tags$style(HTML(app_css)),
+    tags$meta(name = "viewport", content = "width=device-width, initial-scale=1"),
+    tags$script(HTML("
+      (function() {
+        function getTheme() {
+          return localStorage.getItem('scidataview_theme') || 
+            (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+        }
+        function applyTheme(theme) {
+          document.documentElement.setAttribute('data-theme', theme);
+          document.documentElement.setAttribute('data-bs-theme', theme);
+          if (document.body) {
+            document.body.setAttribute('data-theme', theme);
+            document.body.setAttribute('data-bs-theme', theme);
+          }
+          var moon = document.getElementById('theme_icon_moon');
+          var sun = document.getElementById('theme_icon_sun');
+          if (moon && sun) {
+            if (theme === 'dark') {
+              moon.style.display = 'none';
+              sun.style.display = 'block';
+            } else {
+              moon.style.display = 'block';
+              sun.style.display = 'none';
+            }
+          }
+        }
+        window.toggleDarkMode = function() {
+          var current = document.documentElement.getAttribute('data-theme') || 'light';
+          var next = current === 'dark' ? 'light' : 'dark';
+          localStorage.setItem('scidataview_theme', next);
+          applyTheme(next);
+        };
+        applyTheme(getTheme());
+        document.addEventListener('DOMContentLoaded', function() {
+          applyTheme(getTheme());
+        });
+      })();
+    ")),
+    tags$link(rel = "icon", type = "image/x-icon", href = "app.ico")
+  ),
+  
+  # Top Navigation Bar (Frosted Glass)
+  div(
+    class = "app-navbar",
+    div(
+      class = "app-brand",
+      div(
+        class = "app-logo-badge",
+        HTML('<svg width="22" height="22" viewBox="0 0 512 512" fill="none"><rect x="96" y="270" width="56" height="120" rx="14" fill="#FFFFFF" opacity="0.9"/><rect x="180" y="190" width="56" height="200" rx="14" fill="#FFFFFF"/><rect x="264" y="240" width="56" height="150" rx="14" fill="#FFFFFF" opacity="0.9"/><rect x="348" y="140" width="56" height="250" rx="14" fill="#FFFFFF"/><path d="M 124 250 C 160 180, 175 165, 208 170 C 245 175, 260 230, 292 215 C 325 200, 345 125, 376 115" fill="none" stroke="#FFD60A" stroke-width="26" stroke-linecap="round"/><circle cx="376" cy="115" r="24" fill="#FFFFFF" stroke="#FF9500" stroke-width="8"/></svg>')
+      ),
+      div(
+        h1(class = "app-title-main", "SciDataView")
+      )
+    ),
+    div(
+      style = "display: flex; align-items: center; gap: 10px;",
+      div(
+        class = "app-busy-indicator",
+        tags$span(class = "spinner-border spinner-border-sm", role = "status", style = "width: 12px; height: 12px; border-width: 2px; color: var(--app-blue);"),
+        tags$span("Processing...")
+      ),
+      uiOutput("ui_header_status"),
+      uiOutput("ui_download_html_btn"),
+      uiOutput("ui_download_txt_btn"),
+      tags$button(
+        id = "btn_theme_toggle",
+        class = "btn-theme-toggle",
+        type = "button",
+        onclick = "toggleDarkMode()",
+        title = "Toggle Light / Dark Mode",
+        HTML('<svg id=\"theme_icon_moon\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z\"></path></svg><svg id=\"theme_icon_sun\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" style=\"display:none;\"><circle cx=\"12\" cy=\"12\" r=\"5\"></circle><line x1=\"12\" y1=\"1\" x2=\"12\" y2=\"3\"></line><line x1=\"12\" y1=\"21\" x2=\"12\" y2=\"23\"></line><line x1=\"4.22\" y1=\"4.22\" x2=\"5.64\" y2=\"5.64\"></line><line x1=\"18.36\" y1=\"18.36\" x2=\"19.78\" y2=\"19.78\"></line><line x1=\"1\" y1=\"12\" x2=\"3\" y2=\"12\"></line><line x1=\"21\" y1=\"12\" x2=\"23\" y2=\"12\"></line><line x1=\"4.22\" y1=\"19.78\" x2=\"5.64\" y2=\"18.36\"></line><line x1=\"18.36\" y1=\"5.64\" x2=\"19.78\" y2=\"4.22\"></line></svg>')
+      )
+    )
+  ),
+  
+  # Main Content Container
+  div(
+    class = "app-content-wrap",
+    
+    fluidRow(
+      column(
+        width = 3,
+        div(
+          class = "app-card mb-4",
+          h4("Dataset Ingestion", style = "font-size: 15px; font-weight: 600; margin-bottom: 14px;"),
+          
+          # Custom drop-zone
+          div(
+            class = "app-dropzone",
+            onclick = "$('#file_upload').click()",
+            div(style = "font-size: 28px; color: #0071E3; margin-bottom: 8px;", icon("cloud-arrow-up")),
+            div(style = "font-size: 13px; font-weight: 600; color: var(--app-text);", "Choose a data file"),
+            div(style = "font-size: 11px; color: #86868B; margin-top: 4px;", "Drag & drop or browse (CSV, Parquet, Feather, Arrow, FST, QS, Excel, etc.)")
+          ),
+          
+          # Hidden raw input (accepts all extensions, fallback to fread)
+          div(
+            style = "display: none;",
+            fileInput(
+              inputId = "file_upload",
+              label   = NULL,
+              accept  = NULL
+            )
+          ),
+          
+          uiOutput("ui_sheet_selector"),
+          uiOutput("ui_skip_selector"),
+          
+          div(style = "margin-top: 18px;"),
+          actionButton(
+            inputId = "btn_run",
+            label   = "Refresh",
+            icon    = icon("arrows-rotate"),
+            class   = "btn-app-primary",
+            style   = "width: 100%;"
+          ),
+          
+          div(
+            style = "margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--app-border); font-size: 12px; color: #86868B;",
+            uiOutput("ui_file_meta")
+          )
+        )
+      ),
+      
+      column(
+        width = 9,
+        
+        # 5 Metric KPI Cards
+        div(
+          class = "app-kpi-grid",
+          div(
+            class = "app-kpi-card",
+            div(class = "app-kpi-label", "Observations"),
+            h3(class = "app-kpi-val", textOutput("kpi_rows", inline = TRUE)),
+            div(class = "app-kpi-sub", "Total records (N)")
+          ),
+          div(
+            class = "app-kpi-card",
+            div(class = "app-kpi-label", "Variables"),
+            h3(class = "app-kpi-val", textOutput("kpi_cols", inline = TRUE)),
+            div(class = "app-kpi-sub", "Feature columns (P)")
+          ),
+          div(
+            class = "app-kpi-card",
+            div(class = "app-kpi-label", "Memory"),
+            h3(class = "app-kpi-val", textOutput("kpi_memory", inline = TRUE)),
+            div(class = "app-kpi-sub", "In-RAM footprint")
+          ),
+          div(
+            class = "app-kpi-card",
+            div(class = "app-kpi-label", "Missingness"),
+            h3(class = "app-kpi-val", textOutput("kpi_missing", inline = TRUE)),
+            div(class = "app-kpi-sub", "Unrecorded cells")
+          ),
+          div(
+            class = "app-kpi-card",
+            div(class = "app-kpi-label", "Duplicates"),
+            h3(class = "app-kpi-val", textOutput("kpi_dups", inline = TRUE)),
+            div(class = "app-kpi-sub", "Exact identical rows")
+          )
+        ),
+        
+        # Data Quality & Hygiene Screening Alerts
+        uiOutput("ui_hygiene_banner"),
+        
+        # Segmented Control Tabs
+        div(
+          class = "app-card",
+          tabsetPanel(
+            id = "app_tabs",
+            tabPanel(
+              title = "Column Inventory",
+              div(style = "margin-top: 18px;",
+                  uiOutput("ui_type_override_bar"),
+                  uiOutput("ui_html_inventory"))
+            ),
+            tabPanel(
+              title = "Numeric Distributions",
+              div(style = "margin-top: 18px;",
+                  uiOutput("ui_html_numeric"))
+            ),
+            tabPanel(
+              title = "Categorical Breakdown",
+              div(style = "margin-top: 18px;",
+                  uiOutput("ui_html_categorical"))
+            ),
+            tabPanel(
+              title = "Correlation Matrix (Pearson)",
+              div(style = "margin-top: 18px;",
+                  uiOutput("ui_html_correlation"),
+                  uiOutput("ui_bivariate_scatter"))
+            ),
+            tabPanel(
+              title = "Data Inspector",
+              div(
+                style = "margin-top: 18px;",
+                div(
+                  class = "inspect-toolbar",
+                  div(
+                    style = "display: flex; align-items: center; gap: 10px; flex-wrap: wrap;",
+                    div(
+                      class = "inspect-search-wrap",
+                      tags$svg(
+                        class = "inspect-search-icon", viewBox = "0 0 24 24", fill = "none",
+                        stroke = "currentColor", strokeWidth = "2.2", strokeLinecap = "round", strokeLinejoin = "round",
+                        tags$circle(cx = "11", cy = "11", r = "8"),
+                        tags$line(x1 = "21", y1 = "21", x2 = "16.65", y2 = "16.65")
+                      ),
+                      textInput("tbl_search", NULL, placeholder = "Search all rows & columns...", width = "100%")
+                    ),
+                    uiOutput("ui_inspect_pagination")
+                  ),
+                  div(style = "font-size: 12px; color: var(--app-text-secondary);", textOutput("inspector_status", inline = TRUE))
+                ),
+                div(class = "app-table-wrap", tableOutput("tbl_preview"))
+              )
+            ),
+            tabPanel(
+              title = "Text Report View",
+              div(style = "margin-top: 18px;",
+                  verbatimTextOutput("tbl_report_text"))
+            )
+          )
+        )
+      )
+    )
+  )
+)
+
+# ==============================================================================
+# 7. APPLICATION SERVER LOGIC
+# ==============================================================================
+
+server <- function(input, output, session) {
+  # Gracefully terminate R process when desktop window is closed
+  session$onSessionEnded(function() {
+    if (!isTRUE(getOption("shinylive.active", FALSE))) {
+      message("SciDataView window closed. Terminating background process...")
+      try(stopApp(), silent = TRUE)
+    }
+  })
+  
+  rv <- reactiveValues(
+    raw_df            = NULL,
+    original_df       = NULL,
+    type_overrides    = list(),
+    profile           = NULL,
+    file_name         = NULL,
+    file_path         = NULL,
+    skip_rows         = 0,
+    report_txt        = NULL,
+    report_html       = NULL,
+    selected_cor_pair = NULL,
+    inspect_page      = 1,
+    inv_sort_col      = "Index",
+    inv_sort_dir      = "asc"
+  )
+  
+  # Dynamic Excel sheet selector
+  output$ui_sheet_selector <- renderUI({
+    req(input$file_upload)
+    ext <- tolower(tools::file_ext(input$file_upload$name))
+    if (ext %in% c("xlsx", "xls")) {
+      sheets <- readxl::excel_sheets(input$file_upload$datapath)
+      if (length(sheets) > 1) {
+        selectInput(
+          inputId  = "excel_sheet",
+          label    = "Select Excel Sheet:",
+          choices  = sheets,
+          selected = sheets[1]
+        )
+      }
+    }
+  })
+  
+  # Dynamic title row skip selector (auto-detected, user can adjust)
+  output$ui_skip_selector <- renderUI({
+    req(input$file_upload)
+    ext <- tolower(tools::file_ext(input$file_upload$name))
+    if (ext %in% c("parquet", "feather", "arrow", "fst", "qs", "qs2", "rds", "dta", "sav", "sas7bdat")) {
+      return(NULL)
+    }
+    sheet_sel <- if (!is.null(input$excel_sheet)) input$excel_sheet else 1
+    detected  <- detect_title_skip(input$file_upload$datapath, ext = ext, sheet = sheet_sel)
+    
+    div(
+      style = "margin-top: 10px;",
+      numericInput(
+        inputId = "num_skip_rows",
+        label   = tags$div(
+          style = "display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;",
+          tags$span(style = "font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--app-text-secondary); letter-spacing: 0.04em;", "Skip Title Rows:"),
+          tags$span(style = sprintf("font-size: 11px; font-weight: 500; color: %s;", if (detected > 0) "#0071E3" else "#86868B"),
+                    sprintf("Auto: %d", detected))
+        ),
+        value   = detected,
+        min     = 0,
+        max     = 100,
+        step    = 1,
+        width   = "100%"
+      )
+    )
+  })
+  
+  # Ingest and profile file upon upload or Profile button click
+  observeEvent(c(input$file_upload, input$btn_run), {
+    req(input$file_upload)
+    
+    file_info <- input$file_upload
+    sheet_sel <- if (!is.null(input$excel_sheet)) input$excel_sheet else 1
+    skip_sel  <- if (!is.null(input$num_skip_rows)) input$num_skip_rows else "auto"
+    
+    withProgress(message = "Reading dataset...", detail = "Please wait", value = 0.3, {
+      tryCatch({
+        df <- read_any_table(file_info$datapath, sheet = sheet_sel, skip = skip_sel)
+        skip_actual <- attr(df, "skip_rows")
+        rv$skip_rows <- if (!is.null(skip_actual)) skip_actual else 0
+        
+        setProgress(value = 0.7, message = "Classifying columns & screening data...")
+        p <- profile_dataset(df, type_overrides = list(), lazy = TRUE)
+        
+        rv$original_df       <- df
+        rv$raw_df            <- df
+        rv$type_overrides    <- list()
+        rv$file_name         <- file_info$name
+        rv$file_path         <- file_info$datapath
+        rv$profile           <- p
+        rv$report_txt        <- NULL
+        rv$report_html       <- NULL
+        rv$selected_cor_pair <- NULL
+        rv$inspect_page      <- 1
+        rv$inv_sort_col      <- "Index"
+        rv$inv_sort_dir      <- "asc"
+        
+        if (isTRUE(rv$skip_rows > 0)) {
+          showNotification(sprintf("Auto-skipped %d title row(s). Header at row %d.", rv$skip_rows, rv$skip_rows + 1),
+                           type = "message", duration = 4)
+        }
+        
+        setProgress(value = 1.0, message = "Complete!")
+      }, error = function(e) {
+        showNotification(
+          paste("Failed to read file:", e$message),
+          type = "error",
+          duration = 8
+        )
+      })
+    })
+  })
+  
+  # Lazy Profile Evaluators (Computed on demand when switching to respective tabs)
+  numeric_profile <- reactive({
+    req(rv$raw_df, rv$profile)
+    if (!is.null(rv$profile$numeric)) return(rv$profile$numeric)
+    compute_numeric_profile(rv$raw_df, rv$profile$num_cols)
+  })
+  
+  categorical_profile <- reactive({
+    req(rv$raw_df, rv$profile)
+    if (!is.null(rv$profile$categorical)) return(rv$profile$categorical)
+    compute_categorical_profile(rv$raw_df, rv$profile$cat_cols, rv$profile$rows)
+  })
+  
+  cor_profile <- reactive({
+    req(rv$raw_df, rv$profile)
+    if (!is.null(rv$profile$cor_meta)) return(rv$profile$cor_meta)
+    compute_cor_matrix(rv$raw_df, rv$profile$num_cols, max_vars = 35)
+  })
+  
+  # File metadata indicator in sidebar
+  output$ui_file_meta <- renderUI({
+    if (is.null(rv$file_name)) {
+      div("No file loaded. Drop a table to begin profiling.")
+    } else {
+      div(
+        div(style = "font-weight: 600; color: var(--app-text); margin-bottom: 2px;", rv$file_name),
+        div(sprintf("Format: %s", toupper(tools::file_ext(rv$file_name)))),
+        if (isTRUE(rv$skip_rows > 0)) {
+          div(style = "color: #0071E3; font-weight: 500; font-size: 11px; margin-top: 4px;",
+              sprintf("Header at row %d (Skipped %d title rows)", rv$skip_rows + 1, rv$skip_rows))
+        }
+      )
+    }
+  })
+  
+  # Header Status Badge
+  output$ui_header_status <- renderUI({
+    if (is.null(rv$raw_df)) {
+      span(style = "font-size: 12px; color: var(--app-badge-text); background: var(--app-badge-bg); padding: 4px 10px; border-radius: 980px;", "Ready")
+    } else {
+      span(style = "font-size: 12px; color: #0071E3; background: rgba(0, 113, 227, 0.1); padding: 4px 10px; border-radius: 980px; font-weight: 500;",
+           sprintf("Active: %s", rv$file_name))
+    }
+  })
+  
+  # Top HTML Export Button
+  output$ui_download_html_btn <- renderUI({
+    req(rv$raw_df)
+    downloadButton(
+      outputId = "btn_download_html",
+      label    = "Export HTML (.html)",
+      class    = "btn-app-primary"
+    )
+  })
+  
+  output$btn_download_html <- downloadHandler(
+    filename = function() {
+      paste0(tools::file_path_sans_ext(rv$file_name), "_data_profile.html")
+    },
+    content = function(file) {
+      req(rv$raw_df, rv$profile)
+      full_p <- ensure_full_profile(rv$raw_df, rv$profile)
+      writeLines(generate_html_report(rv$file_name, full_p), con = file, useBytes = TRUE)
+    }
+  )
+  
+  # Top TXT Export Button
+  output$ui_download_txt_btn <- renderUI({
+    req(rv$raw_df)
+    downloadButton(
+      outputId = "btn_download_txt",
+      label    = "Export Text (.txt)",
+      class    = "btn-app-secondary"
+    )
+  })
+  
+  output$btn_download_txt <- downloadHandler(
+    filename = function() {
+      paste0(tools::file_path_sans_ext(rv$file_name), "_data_summary.txt")
+    },
+    content = function(file) {
+      req(rv$raw_df, rv$profile)
+      full_p <- ensure_full_profile(rv$raw_df, rv$profile)
+      writeLines(generate_text_report(rv$file_name, full_p), con = file, useBytes = TRUE)
+    }
+  )
+  
+  # Metric KPI Cards
+  output$kpi_rows    <- renderText({ if (is.null(rv$profile)) "-" else format(rv$profile$rows, big.mark = ",") })
+  output$kpi_cols    <- renderText({ if (is.null(rv$profile)) "-" else format(rv$profile$cols, big.mark = ",") })
+  output$kpi_memory  <- renderText({ if (is.null(rv$profile)) "-" else rv$profile$memory })
+  output$kpi_missing <- renderText({ if (is.null(rv$profile)) "-" else paste0(rv$profile$missing_rate, "%") })
+  output$kpi_dups    <- renderText({ if (is.null(rv$profile)) "-" else format(rv$profile$duplicates, big.mark = ",") })
+  
+  # Data Quality & Hygiene Screening Alerts Banner
+  output$ui_hygiene_banner <- renderUI({
+    req(rv$profile)
+    flags <- rv$profile$hygiene_flags
+    
+    div(
+      class = "app-card mb-4",
+      div(style = "font-size: 14px; font-weight: 600; color: var(--app-text); margin-bottom: 12px; display: flex; align-items: center; gap: 8px;",
+          icon("shield-heart"), "Data Quality & Hygiene Screening"),
+      tagList(lapply(flags, function(f) {
+        div(
+          style = sprintf("display: flex; align-items: flex-start; gap: 12px; background: %s; border-radius: 12px; padding: 10px 14px; margin-bottom: 6px;", f$bg),
+          div(style = sprintf("font-size: 11px; font-weight: 700; color: %s; min-width: 140px; text-transform: uppercase; letter-spacing: 0.04em;", f$color), f$title),
+          div(style = "font-size: 13px; color: var(--app-text); line-height: 1.4;", f$desc)
+        )
+      }))
+    )
+  })
+  
+  # Type Override Toolbar (Tab 1)
+  output$ui_type_override_bar <- renderUI({
+    req(rv$profile)
+    cols <- rv$profile$inventory$Column_Name
+    has_overrides <- length(rv$type_overrides) > 0
+    
+    div(
+      class = "type-override-toolbar",
+      div(
+        class = "type-override-controls",
+        div(
+          class = "type-override-label",
+          tags$svg(
+            width = "14", height = "14", viewBox = "0 0 24 24", fill = "none",
+            stroke = "currentColor", strokeWidth = "2", strokeLinecap = "round", strokeLinejoin = "round",
+            tags$path(d = "M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"),
+            tags$path(d = "M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z")
+          ),
+          tags$span("Change Data Type:")
+        ),
+        div(
+          class = "type-override-select-wrap", style = "min-width: 170px; max-width: 250px;",
+          selectInput("sel_col_override", NULL, choices = cols, selected = input$sel_col_override, selectize = FALSE, width = "100%")
+        ),
+        div(
+          class = "type-override-arrow",
+          tags$svg(
+            width = "14", height = "14", viewBox = "0 0 24 24", fill = "none",
+            stroke = "currentColor", strokeWidth = "2.2", strokeLinecap = "round", strokeLinejoin = "round",
+            tags$line(x1 = "5", y1 = "12", x2 = "19", y2 = "12"),
+            tags$polyline(points = "12 5 19 12 12 19")
+          )
+        ),
+        div(
+          class = "type-override-select-wrap", style = "min-width: 190px; max-width: 230px;",
+          selectInput("sel_type_target", NULL, choices = c(
+            "Continuous Numeric",
+            "Categorical String",
+            "Discrete / Categorical",
+            "Date / Time",
+            "Identifier (ID)"
+          ), selectize = FALSE, width = "100%")
+        ),
+        actionButton(
+          "btn_apply_type",
+          label = tags$span(
+            tags$svg(
+              width = "12", height = "12", viewBox = "0 0 24 24", fill = "none",
+              stroke = "currentColor", strokeWidth = "2.5", strokeLinecap = "round", strokeLinejoin = "round",
+              style = "margin-right: 5px; vertical-align: -1px;",
+              tags$polyline(points = "20 6 9 17 4 12")
+            ),
+            "Apply Change"
+          ),
+          class = "btn-app-primary type-override-btn"
+        )
+      ),
+      if (has_overrides) {
+        actionButton(
+          "btn_reset_types",
+          label = tags$span(
+            tags$svg(
+              width = "12", height = "12", viewBox = "0 0 24 24", fill = "none",
+              stroke = "currentColor", strokeWidth = "2", strokeLinecap = "round", strokeLinejoin = "round",
+              style = "margin-right: 5px; vertical-align: -1px;",
+              tags$path(d = "M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"),
+              tags$path(d = "M3 3v5h5")
+            ),
+            sprintf("Reset Defaults (%d)", length(rv$type_overrides))
+          ),
+          class = "btn-app-secondary type-override-btn"
+        )
+      }
+    )
+  })
+  
+  observeEvent(input$btn_apply_type, {
+    req(rv$original_df, input$sel_col_override, input$sel_type_target)
+    col <- input$sel_col_override
+    target <- input$sel_type_target
+    
+    overrides <- rv$type_overrides
+    overrides[[col]] <- target
+    rv$type_overrides <- overrides
+    
+    p <- profile_dataset(rv$original_df, type_overrides = rv$type_overrides, lazy = TRUE)
+    rv$profile     <- p
+    rv$report_txt  <- NULL
+    rv$report_html <- NULL
+    showNotification(sprintf("Updated '%s' Data type to '%s'", col, target), type = "message", duration = 3)
+  })
+  
+  observeEvent(input$btn_reset_types, {
+    req(rv$original_df)
+    rv$type_overrides <- list()
+    p <- profile_dataset(rv$original_df, type_overrides = list(), lazy = TRUE)
+    rv$profile     <- p
+    rv$report_txt  <- NULL
+    rv$report_html <- NULL
+    showNotification("Reset all columns to original detected data types.", type = "message", duration = 3)
+  })
+  
+  observeEvent(input$inv_sort_click, {
+    col <- input$inv_sort_click
+    if (identical(rv$inv_sort_col, col)) {
+      rv$inv_sort_dir <- if (rv$inv_sort_dir == "asc") "desc" else "asc"
+    } else {
+      rv$inv_sort_col <- col
+      if (col %in% c("Missing_Pct", "Complete_N", "Distinct_N")) {
+        rv$inv_sort_dir <- "desc"
+      } else {
+        rv$inv_sort_dir <- "asc"
+      }
+    }
+  })
+  
+  observeEvent(input$btn_reset_inv_sort, {
+    rv$inv_sort_col <- "Index"
+    rv$inv_sort_dir <- "asc"
+  })
+  
+  # Tab 1: Column Inventory (with Missingness header, bar & interactive column sorting)
+  output$ui_html_inventory <- renderUI({
+    if (is.null(rv$profile)) {
+      return(div(
+        style = "padding: 56px 20px; text-align: center; color: #86868B;",
+        div(style = "font-size: 40px; color: #0071E3; margin-bottom: 14px;", icon("file-csv")),
+        div(style = "font-size: 16px; font-weight: 600; color: var(--app-text); margin-bottom: 6px;", "No Dataset Loaded"),
+        div(style = "font-size: 13px; max-width: 500px; margin: 0 auto; line-height: 1.5;", 
+            "Upload or drag & drop any tabular file (CSV, Parquet, Feather, Arrow, FST, QS, Excel, Stata, SPSS, etc.) on the left sidebar to generate the data profile.")
+      ))
+    }
+    inv <- rv$profile$inventory
+    
+    # Sort inventory by active column & direction
+    sort_col <- rv$inv_sort_col
+    sort_dir <- rv$inv_sort_dir
+    if (!is.null(sort_col) && sort_col %in% names(inv)) {
+      ord <- order(inv[[sort_col]], decreasing = (sort_dir == "desc"), na.last = TRUE)
+      inv <- inv[ord, , drop = FALSE]
+    }
+    
+    render_th <- function(label, col_id, align = "left", style_extra = "") {
+      is_active <- identical(rv$inv_sort_col, col_id)
+      indicator <- if (is_active) {
+        if (rv$inv_sort_dir == "asc") " ▲" else " ▼"
+      } else {
+        " ⇅"
+      }
+      ind_style <- if (is_active) "color: var(--app-blue); font-weight: 700;" else "color: var(--app-text-secondary); opacity: 0.35;"
+      
+      tags$th(
+        class = "sortable-th",
+        style = sprintf("cursor: pointer; user-select: none; text-align: %s; %s", align, style_extra),
+        onclick = sprintf("Shiny.setInputValue('inv_sort_click', '%s', {priority: 'event'})", col_id),
+        title = sprintf("Sort by %s (%s)", label, if (is_active && rv$inv_sort_dir == "asc") "Ascending -> click for Descending" else "Descending -> click for Ascending"),
+        label,
+        tags$span(style = sprintf("font-size: 10px; margin-left: 4px; display: inline-block; %s", ind_style), indicator)
+      )
+    }
+    
+    rows_html <- lapply(seq_len(nrow(inv)), function(i) {
+      r <- inv[i, ]
+      type_badge <- if (isTRUE(r$Is_Overridden)) {
+        span(style = "font-size: 11px; font-weight: 600; background: rgba(0, 113, 227, 0.12); color: #0071E3; padding: 3px 8px; border-radius: 980px; border: 1px solid rgba(0, 113, 227, 0.25);",
+             paste0(r$Data_Type, " (Edited)"))
+      } else {
+        span(style = "font-size: 11px; font-weight: 600; background: var(--app-badge-bg); color: var(--app-badge-text); padding: 3px 8px; border-radius: 980px;", r$Data_Type)
+      }
+      tags$tr(
+        tags$td(style = "color: #86868B; text-align: center;", r$Index),
+        tags$td(style = "font-weight: 600;", r$Column_Name),
+        tags$td(type_badge),
+        tags$td(style = "min-width: 140px;", HTML(r$Missing_Bar)),
+        tags$td(style = "text-align: right;", format(r$Complete_N, big.mark = ",")),
+        tags$td(style = "text-align: right;", format(r$Distinct_N, big.mark = ",")),
+        tags$td(style = "color: var(--app-text-secondary);", r$Sample_Value)
+      )
+    })
+    
+    div(
+      div(
+        class = "app-table-wrap",
+        tags$table(
+          class = "table",
+          tags$thead(
+            tags$tr(
+              render_th("#", "Index", align = "center", style_extra = "width: 50px;"),
+              render_th("Column Name", "Column_Name"),
+              render_th("Data type", "Data_Type"),
+              render_th("Missingness", "Missing_Pct", style_extra = "min-width: 140px;"),
+              render_th("Complete N", "Complete_N", align = "right"),
+              render_th("Distinct N", "Distinct_N", align = "right"),
+              tags$th("Sample Value")
+            )
+          ),
+          tags$tbody(rows_html)
+        )
+      ),
+      div(
+        style = "display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-size: 12px; color: var(--app-text-secondary);",
+        tags$span(sprintf("Total %d columns. Click any column header (▲/▼) to sort.", nrow(inv))),
+        if (!identical(rv$inv_sort_col, "Index")) {
+          actionLink(
+            "btn_reset_inv_sort",
+            label = "Reset to original order (#)",
+            style = "font-size: 12px; color: var(--app-blue); text-decoration: none; cursor: pointer;"
+          )
+        }
+      )
+    )
+  })
+  
+  # Tab 2: Numeric Distributions (with Sparklines, Skewness & Outliers)
+  output$ui_html_numeric <- renderUI({
+    if (is.null(rv$profile)) {
+      return(div(style = "padding: 56px 20px; text-align: center; color: #86868B;", "Upload a dataset to view numeric distributions, sparklines, and outliers."))
+    }
+    num <- numeric_profile()
+    if (is.null(num)) {
+      return(render_skeleton_table(rows = 6, cols = 8, message = "Computing numeric distributions, sparklines, and moments..."))
+    }
+    if (nrow(num) == 0) {
+      return(div(style = "padding: 20px; color: #86868B; text-align: center;", "No numeric features found in this dataset."))
+    }
+    
+    rows_html <- lapply(seq_len(nrow(num)), function(i) {
+      r <- num[i, ]
+      out_color <- if (r$Outliers_Pct > 5) "#FF3B30" else if (r$Outliers_Pct > 0) "#FF9500" else "#86868B"
+      
+      tags$tr(
+        tags$td(style = "font-weight: 600;", r$Variable),
+        tags$td(style = "text-align: center;", HTML(r$Distribution_SVG)),
+        tags$td(HTML(sprintf("<strong>%.1f</strong> (%.1f)", r$Mean, r$SD))),
+        tags$td(HTML(sprintf("<strong>%.1f</strong> [%.1f]", r$Median, r$IQR))),
+        tags$td(sprintf("%.1f", r$Min)),
+        tags$td(sprintf("%.1f", r$Max)),
+        tags$td(sprintf("%.2f", r$Skewness)),
+        tags$td(style = sprintf("color: %s; font-weight: 600;", out_color), sprintf("%s (%.1f%%)", format(r$Outliers_N, big.mark = ","), r$Outliers_Pct))
+      )
+    })
+    
+    div(
+      class = "app-table-wrap",
+      tags$table(
+        class = "table",
+        tags$thead(
+          tags$tr(
+            tags$th("Variable"),
+            tags$th(style = "text-align: center; min-width: 120px;", "Distribution"),
+            tags$th("Mean (SD)"),
+            tags$th("Median [IQR]"),
+            tags$th("Min"),
+            tags$th("Max"),
+            tags$th("Skewness"),
+            tags$th("Outliers")
+          )
+        ),
+        tags$tbody(rows_html)
+      )
+    )
+  })
+  
+  # Tab 3: Categorical Breakdown
+  output$ui_html_categorical <- renderUI({
+    if (is.null(rv$profile)) {
+      return(div(style = "padding: 56px 20px; text-align: center; color: #86868B;", "Upload a dataset to view categorical frequency breakdowns."))
+    }
+    cat_df <- categorical_profile()
+    if (is.null(cat_df)) {
+      return(render_skeleton_table(rows = 5, cols = 3, message = "Computing categorical frequency breakdowns..."))
+    }
+    if (nrow(cat_df) == 0) {
+      return(div(style = "padding: 20px; color: #86868B; text-align: center;", "No categorical features found in this dataset."))
+    }
+    
+    rows_html <- lapply(seq_len(nrow(cat_df)), function(i) {
+      r <- cat_df[i, ]
+      tags$tr(
+        tags$td(style = "font-weight: 600;", r$Variable),
+        tags$td(style = "text-align: center;", span(style = "background: var(--app-badge-bg); color: var(--app-badge-text); padding: 3px 8px; border-radius: 980px; font-weight: 600; font-size: 11px;", r$Total_Levels)),
+        tags$td(style = "color: var(--app-text);", r$Top_Categories)
+      )
+    })
+    
+    div(
+      class = "app-table-wrap",
+      tags$table(
+        class = "table",
+        tags$thead(
+          tags$tr(
+            tags$th("Variable"),
+            tags$th(style = "text-align: center;", "Total Levels"),
+            tags$th("Frequency Breakdown (Top Levels)")
+          )
+        ),
+        tags$tbody(rows_html)
+      )
+    )
+  })
+  
+  # Tab 4: Correlation Matrix
+  output$ui_html_correlation <- renderUI({
+    if (is.null(rv$profile)) {
+      return(div(style = "padding: 56px 20px; text-align: center; color: #86868B;", "Upload a dataset to compute the Pearson correlation matrix."))
+    }
+    cor_res <- cor_profile()
+    if (is.null(cor_res)) {
+      return(render_skeleton_table(rows = 6, cols = 6, message = "Computing Pearson correlation matrix..."))
+    }
+    c_mat <- cor_res$matrix
+    if (is.null(c_mat)) {
+      return(div(style = "padding: 20px; color: #86868B; text-align: center;", "Insufficient numeric variables to construct correlation matrix."))
+    }
+    
+    vars <- colnames(c_mat)
+    header_ths <- lapply(vars, function(v) tags$th(style = "font-size: 10px; padding: 8px 6px; text-align: center;", substr(v, 1, 9)))
+    
+    matrix_rows <- lapply(seq_along(vars), function(row_i) {
+      cells <- lapply(seq_along(vars), function(col_j) {
+        if (row_i == col_j) {
+          return(tags$td(style = "background: var(--app-subbox-bg); color: var(--app-text-secondary); text-align: center; font-size: 12px; font-weight: 600;", "-"))
+        }
+        val <- c_mat[row_i, col_j]
+        if (is.na(val)) return(tags$td(style = "background: var(--app-subbox-bg); color: var(--app-text-secondary); text-align: center;", "-"))
+        
+        intensity <- abs(val)
+        bg_col <- if (val > 0) {
+          sprintf("background: rgba(230, 75, 53, %.2f); color: %s;", intensity * 0.85, if(intensity > 0.5) "#FFF" else "var(--app-text)")
+        } else {
+          sprintf("background: rgba(0, 160, 135, %.2f); color: %s;", intensity * 0.85, if(intensity > 0.5) "#FFF" else "var(--app-text)")
+        }
+        
+        strong_tag <- if (abs(val) >= 0.70) "font-weight: 700; text-decoration: underline;" else ""
+        tags$td(
+          class = "cell-cor-interactive",
+          title = sprintf("Click to inspect scatter: %s vs %s (r = %.2f)", vars[row_i], vars[col_j], val),
+          onclick = sprintf("Shiny.setInputValue('sel_cor_pair', '%s:::%s', {priority: 'event'})", vars[row_i], vars[col_j]),
+          style = sprintf("padding: 8px 6px; text-align: center; font-size: 11px; %s %s", bg_col, strong_tag),
+          sprintf("%.2f", val)
+        )
+      })
+      tags$tr(tags$td(style = "font-weight: 600; font-size: 11px; padding: 8px 10px;", vars[row_i]), cells)
+    })
+    
+    guard_badge <- if (isTRUE(cor_res$is_truncated)) {
+      div(
+        style = "display: inline-flex; align-items: center; gap: 8px; background: rgba(0, 113, 227, 0.08); border: 1px solid rgba(0, 113, 227, 0.2); border-radius: var(--app-radius-pill); padding: 5px 14px; margin-bottom: 14px; font-size: 12px; color: var(--app-blue); font-weight: 500;",
+        tags$svg(
+          width = "14", height = "14", viewBox = "0 0 24 24", fill = "none",
+          stroke = "currentColor", strokeWidth = "2", strokeLinecap = "round", strokeLinejoin = "round",
+          tags$circle(cx = "12", cy = "12", r = "10"),
+          tags$line(x1 = "12", y1 = "16", x2 = "12", y2 = "12"),
+          tags$line(x1 = "12", y1 = "8", x2 = "12.01", y2 = "8")
+        ),
+        sprintf("Dimensionality Guard: Showing top %d features by variance (out of %d numeric columns) for optimal performance.", cor_res$displayed_n, cor_res$total_vars)
+      )
+    } else {
+      NULL
+    }
+    
+    div(
+      guard_badge,
+      div(
+        class = "app-table-wrap",
+        tags$table(
+          class = "table",
+          tags$thead(tags$tr(tags$th("Feature"), header_ths)),
+          tags$tbody(matrix_rows)
+        )
+      ),
+      div(style = "font-size: 12px; color: #86868B; margin-top: 10px;",
+          "* Pearson correlation coefficient r [-1.0 to 1.0]. Diagonal indicates self-correlation (-). Color scale: Red (+1.0) and Teal (-1.0). Underlined bold entries indicate strong collinearity (|r| >= 0.70). Click any cell to view scatter & trendline.")
+    )
+  })
+  
+  # Bivariate scatter viewer (Phase 3)
+  observeEvent(input$sel_cor_pair, {
+    rv$selected_cor_pair <- input$sel_cor_pair
+  })
+  
+  observeEvent(input$btn_close_scatter, {
+    rv$selected_cor_pair <- NULL
+  })
+  
+  output$ui_bivariate_scatter <- renderUI({
+    req(rv$raw_df)
+    pair_str <- rv$selected_cor_pair
+    if (is.null(pair_str) || !nzchar(pair_str)) {
+      return(NULL)
+    }
+    parts <- strsplit(pair_str, ":::")[[1]]
+    if (length(parts) != 2) return(NULL)
+    v1 <- parts[1]
+    v2 <- parts[2]
+    
+    if (!all(c(v1, v2) %in% names(rv$raw_df))) return(NULL)
+    
+    x_val <- rv$raw_df[[v1]]
+    y_val <- rv$raw_df[[v2]]
+    if (!is.numeric(x_val) || !is.numeric(y_val)) return(NULL)
+    
+    valid <- !is.na(x_val) & !is.na(y_val) & is.finite(x_val) & is.finite(y_val)
+    n_pts <- sum(valid)
+    if (n_pts < 3) return(NULL)
+    
+    r_val <- cor(x_val[valid], y_val[valid])
+    r2_val <- r_val^2
+    
+    svg_html <- generate_svg_bivariate(x_val, y_val, v1, v2, width = 640, height = 240)
+    
+    div(
+      style = "margin-top: 20px; padding: 20px; background: var(--app-subbox-bg); border-radius: var(--app-radius-md); border: 1px solid var(--app-border);",
+      div(
+        style = "display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;",
+        div(
+          tags$span(style = "font-weight: 600; font-size: 14px; color: var(--app-text);", 
+                    sprintf("Bivariate Relationship: %s vs %s", v1, v2)),
+          tags$span(style = "margin-left: 12px; font-size: 12px; color: var(--app-text-secondary);",
+                    sprintf("Pearson r = %.3f | R² = %.3f | N = %s", r_val, r2_val, format(n_pts, big.mark = ",")))
+        ),
+        actionButton(
+          inputId = "btn_close_scatter",
+          label = "Close Preview",
+          class = "btn-app-secondary",
+          style = "font-size: 11px; padding: 3px 10px; height: 26px; line-height: 1;"
+        )
+      ),
+      HTML(svg_html)
+    )
+  })
+  
+  # Tab 5: Data Inspector (with vectorized search filter & pagination)
+  search_debounced <- debounce(reactive(input$tbl_search), 300)
+  
+  observeEvent(search_debounced(), {
+    rv$inspect_page <- 1
+  })
+  
+  observeEvent(input$btn_inspect_prev, {
+    if (isTRUE(rv$inspect_page > 1)) {
+      rv$inspect_page <- rv$inspect_page - 1
+    }
+  })
+  
+  observeEvent(input$btn_inspect_next, {
+    m_df <- matched_preview()
+    total_m <- nrow(m_df)
+    max_p <- max(1, ceiling(total_m / 25))
+    if (isTRUE(rv$inspect_page < max_p)) {
+      rv$inspect_page <- rv$inspect_page + 1
+    }
+  })
+  
+  matched_preview <- reactive({
+    req(rv$raw_df)
+    df <- rv$raw_df
+    q <- search_debounced()
+    if (!is.null(q) && nzchar(trimws(q))) {
+      q_clean <- trimws(q)
+      col_matches <- lapply(df, function(col) {
+        grepl(q_clean, as.character(col), ignore.case = TRUE)
+      })
+      matched_rows <- Reduce(`|`, col_matches)
+      df <- df[matched_rows, , drop = FALSE]
+    }
+    df
+  })
+  
+  output$ui_inspect_pagination <- renderUI({
+    req(rv$raw_df)
+    total_m <- nrow(matched_preview())
+    page_size <- 25
+    total_pages <- max(1, ceiling(total_m / page_size))
+    curr_page <- min(max(1, rv$inspect_page), total_pages)
+    
+    if (total_pages <= 1) return(NULL)
+    
+    div(
+      class = "inspect-pagination-group",
+      actionButton(
+        "btn_inspect_prev", "◀",
+        class = "btn-inspect-page",
+        disabled = if (curr_page <= 1) "disabled" else NULL,
+        title = "Previous page"
+      ),
+      div(class = "inspect-page-indicator", sprintf("Page %d / %d", curr_page, total_pages)),
+      actionButton(
+        "btn_inspect_next", "▶",
+        class = "btn-inspect-page",
+        disabled = if (curr_page >= total_pages) "disabled" else NULL,
+        title = "Next page"
+      )
+    )
+  })
+  
+  output$inspector_status <- renderText({
+    if (is.null(rv$raw_df)) {
+      return("Waiting for data upload...")
+    }
+    total_n <- nrow(rv$raw_df)
+    m_df <- matched_preview()
+    total_m <- nrow(m_df)
+    page_size <- 25
+    total_pages <- max(1, ceiling(total_m / page_size))
+    curr_page <- min(max(1, rv$inspect_page), total_pages)
+    
+    if (total_m == 0) {
+      return(sprintf("0 matches found for '%s' (of %s rows)", input$tbl_search, format(total_n, big.mark = ",")))
+    }
+    
+    start_i <- (curr_page - 1) * page_size + 1
+    end_i   <- min(start_i + page_size - 1, total_m)
+    
+    q <- input$tbl_search
+    if (!is.null(q) && nzchar(trimws(q))) {
+      sprintf("Showing rows %d–%d of %s matches for query '%s' (%s total rows)",
+              start_i, end_i, format(total_m, big.mark = ","), q, format(total_n, big.mark = ","))
+    } else {
+      sprintf("Showing rows %d–%d of %s observations",
+              start_i, end_i, format(total_n, big.mark = ","))
+    }
+  })
+  
+  output$tbl_preview <- renderTable({
+    req(rv$raw_df)
+    m_df <- matched_preview()
+    if (nrow(m_df) == 0) return(data.frame())
+    page_size <- 25
+    total_pages <- max(1, ceiling(nrow(m_df) / page_size))
+    curr_page <- min(max(1, rv$inspect_page), total_pages)
+    start_i <- (curr_page - 1) * page_size + 1
+    end_i   <- min(start_i + page_size - 1, nrow(m_df))
+    m_df[start_i:end_i, , drop = FALSE]
+  }, striped = FALSE, hover = TRUE, bordered = FALSE, spacing = "s", width = "100%")
+  
+  # Tab 6: Formatted Text Report
+  output$tbl_report_text <- renderPrint({
+    if (is.null(rv$raw_df) || is.null(rv$profile)) {
+      cat("No report generated yet. Upload a data file on the left panel to begin profiling.")
+    } else {
+      full_p <- ensure_full_profile(rv$raw_df, rv$profile)
+      cat(generate_text_report(rv$file_name, full_p))
+    }
+  })
+}
+
+# ==============================================================================
+# 8. HEADLESS BATCH CLI EXECUTION (NON-INTERACTIVE MODE)
+# ==============================================================================
+
+if (!interactive()) {
+  args <- commandArgs(trailingOnly = TRUE)
+  
+  if (length(args) > 0 && file.exists(args[1])) {
+    input_file <- args[1]
+    output_dir <- resolve_output_dir()
+    
+    cat("==============================================================================\n")
+    cat("UNIVERSAL DATASET PROFILER (CLI BATCH MODE - P1, P2 & P3)\n")
+    cat("==============================================================================\n")
+    cat("Input File :", input_file, "\n")
+    
+    cat("Reading file and profiling data...\n")
+    df <- read_any_table(input_file, skip = "auto")
+    skip_n <- attr(df, "skip_rows")
+    if (!is.null(skip_n) && skip_n > 0) {
+      cat(sprintf("Auto-detected and skipped %d title row(s) (Header at row %d)\n", skip_n, skip_n + 1))
+    }
+    p  <- profile_dataset(df)
+    
+    base_nm <- tools::file_path_sans_ext(basename(input_file))
+    
+    # 1. Output ASCII Text Report
+    txt_file <- file.path(output_dir, paste0(base_nm, "_data_summary.txt"))
+    writeLines(generate_text_report(input_file, p), con = txt_file, useBytes = TRUE)
+    cat(sprintf("Success! Text report written to: %s\n", txt_file))
+    
+    # 2. Output Standalone Offline HTML Report
+    html_file <- file.path(output_dir, paste0(base_nm, "_data_profile.html"))
+    writeLines(generate_html_report(input_file, p), con = html_file, useBytes = TRUE)
+    cat(sprintf("Success! HTML report written to: %s\n", html_file))
+    
+    cat("==============================================================================\n")
+    quit(save = "no", status = 0)
+  }
+}
+
+# Standalone Shiny App call
+# This exact top-level expression is scanned by RStudio IDE to display the green 'Run App' button
+shinyApp(ui = ui, server = server)
