@@ -1,135 +1,88 @@
-<p align="center">
-  <img src="app/icon/app_icon.svg" width="96" height="96" alt="SciDataView Logo" />
-</p>
+# SciDataView
 
-<h1 align="center">SciDataView</h1>
+Fast tabular data profiler for scientific and analytical datasets.
 
-<p align="center">
-  <strong>Universal Scientific Tabular Data Profiler & Inspector</strong><br>
-  <em>Zero-Dependency • Standalone Windows Portable • WebAssembly Serverless • Headless CLI</em>
-</p>
-
-<p align="center">
-  <a href="https://github.com/trinhxt/SciDataView"><img src="https://img.shields.io/badge/Language-R-276DC3.svg?logo=R&logoColor=white" alt="Language R"></a>
-  <a href="https://github.com/trinhxt/SciDataView"><img src="https://img.shields.io/badge/Framework-Shiny-1B9AAA.svg?logo=rstudio&logoColor=white" alt="Shiny"></a>
-  <a href="https://github.com/trinhxt/SciDataView"><img src="https://img.shields.io/badge/WebAssembly-Shinylive-654FF0.svg?logo=webassembly&logoColor=white" alt="WebAssembly"></a>
-  <a href="https://github.com/trinhxt/SciDataView"><img src="https://img.shields.io/badge/Platform-Windows%20Portable-0078D6.svg?logo=windows&logoColor=white" alt="Windows Portable"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License MIT"></a>
-</p>
+Available as:
+- **Windows Portable**: Self-contained R environment. Runs without installing R or requiring administrator privileges.
+- **WebAssembly (Shinylive)**: Runs entirely client-side in the browser via webR.
+- **CLI Batch Mode**: Non-interactive command-line tool for automated pipelines.
 
 ---
 
-## 🌟 Overview
+## Supported Formats
 
-**SciDataView** is an enterprise-grade scientific tabular data exploration, hygiene screening, and profiling tool. It bridges the gap between heavyweight statistical suites and lightweight data viewers, offering immediate, publication-ready data summaries with zero software installation required.
-
-SciDataView supports three distinct deployment paradigms:
-1. **Windows Standalone Portable Edition**: Self-contained R-Portable engine. Double-click to run anywhere (USB, Desktop, VM) without R, RStudio, or administrator permissions.
-2. **WebAssembly / Shinylive (Serverless Web)**: Runs 100% inside modern web browsers (Chrome, Edge, Firefox, Safari) using client-side `webR`. Zero server infrastructure required.
-3. **Headless Batch CLI Execution**: Non-interactive command-line profiling for bioinformatics pipelines, HPC clusters, and automated cron jobs.
+- **Delimited text**: CSV, TSV, TXT (auto-detects delimiter, header, encoding, and title rows to skip).
+- **Serial formats**: Parquet, Arrow, Feather, FST, QS/QS2, RDS.
+- **Statistical software & spreadsheets**: Excel (`.xlsx`, `.xls`), Stata (`.dta`), SPSS (`.sav`), SAS (`.sas7bdat`).
 
 ---
 
-## ✨ Key Features
+## Capabilities
 
-- **Universal Format Ingestion**:
-  - Delimited text: `.csv`, `.tsv`, `.txt`, `.tab`, `.dat`, `.semicolon`, `.pipe`.
-  - Serialized analytics formats: Apache Parquet (`.parquet`), Arrow/Feather (`.feather`, `.arrow`), FST (`.fst`), QS/QS2 (`.qs`, `.qs2`), R objects (`.rds`).
-  - Spreadsheets & Statistical suites: Microsoft Excel (`.xlsx`, `.xls`), Stata (`.dta`), SPSS (`.sav`, `.zsav`), SAS (`.sas7bdat`).
-- **Autonomous Structure Detection**:
-  - Automatic detection of metadata/title rows with dynamic skip row selectors.
-  - Automatic detection of delimiters, headers, and UTF-8 / latin1 encodings.
-- **Data Quality & Hygiene Screening**:
-  - Instant alerts for zero-variance features, severe missingness (>50%), near-empty columns (>90%), and duplicate records.
-- **Interactive Column Inventory**:
-  - Column classification into Continuous Numeric, Categorical String, Discrete, Date/Time, and Unique Identifiers.
-  - Real-time missingness bars, distinct counts, sample values.
-  - Bi-directional interactive column sorting (▲/▼).
-  - Dynamic on-the-fly Data Type overriding with instant recalculation.
-- **Numeric Distributions & Moments**:
-  - Native SVG Sparkline mini-histograms (subsampled $\le 3,000$ points for 60fps rendering).
-  - Parametric & non-parametric moments: Mean, SD, Median, IQR, Min, Max.
-  - Fisher-Pearson Skewness coefficient and Tukey IQR Outlier detection.
-- **Pearson Correlation Matrix & Bivariate Visualizer**:
-  - High-performance collinearity matrix with color heatmapping.
-  - **Dimensionality Guard**: Automatically limits computation to top 35 features by variance when $N > 35$ to guarantee smooth browser rendering.
-  - Click-to-inspect bivariate scatter plot with regression trendline and $R^2$ variance metric.
-- **Fast Data Inspector**:
-  - Vectorized multi-column text search with debounced filtering.
-  - Zero-lag server-side pagination with clean navigation controls.
-- **Lazy Tab Evaluation & Skeleton Shimmer**:
-  - Initial upload profiling finishes in $<0.05$ seconds.
-  - Heavy calculations (moments, frequencies, correlation) evaluate on-demand upon tab activation and are cached reactively.
-  - Shimmer placeholder animations indicate progress during tab transitions.
-- **Standalone Offline Export**:
-  - One-click export of self-contained, CSS-inlined HTML reports (`_data_profile.html`).
-  - Terminal-formatted ASCII plain-text summary reports (`_data_summary.txt`).
+- **Quality Screening**: Flags zero-variance columns, high missingness (>50%), near-empty columns (>90%), and duplicate rows.
+- **Column Inventory**: Inferred types, missing rates, distinct counts, and interactive type casting.
+- **Numeric Profiles**: Distribution sparklines, mean, SD, median, IQR, min, max, skewness, and Tukey outlier counts.
+- **Categorical Breakdowns**: Unique level counts and top-level frequencies.
+- **Correlation Matrix**: Pearson correlation with click-to-view bivariate scatter plots. Automatically limits to the top 35 variables by variance when column count exceeds 35 to maintain UI responsiveness.
+- **Data Preview**: Multi-column text search with pagination.
+- **Export**: Self-contained HTML reports (single file, offline CSS) and plain-text summaries.
 
 ---
 
-## 🚀 Getting Started
+## Quick Start
 
-### Method 1: Portable Windows Edition (No R Required)
+### 1. Windows Portable (No R installation required)
 1. Download `SciDataView-Windows-Portable.zip` from [Releases](https://github.com/trinhxt/SciDataView/releases).
-2. Extract the archive to any folder or USB drive.
+2. Extract the archive.
 3. Double-click `SciDataView.lnk` (or `app/SciDataView.bat`).
-4. The application opens automatically in your default web browser.
 
-### Method 2: Standard R Developer Workflow
-If you already have R installed:
+### 2. Run with Existing R
 ```bash
-# Clone the repository
 git clone https://github.com/trinhxt/SciDataView.git
 cd SciDataView
 
-# Install required dependencies
+# Install dependencies
 Rscript install_deps.R
 
-# Launch desktop app
+# Launch app
 Rscript app/run_app.R
 ```
 
-### Method 3: Headless CLI Batch Profiling
-Run non-interactive profiling from terminal or bash scripts:
+### 3. CLI Batch Mode
 ```bash
-Rscript app/app.R "path/to/dataset.csv"
+Rscript app/app.R "path/to/data.csv"
 ```
-Generated reports will be output automatically as:
-- `dataset_data_summary.txt`
-- `dataset_data_profile.html`
+Outputs `<filename>_data_summary.txt` and `<filename>_data_profile.html`.
 
-### Method 4: Compile to WebAssembly (Shinylive)
-To export the application as a static website powered by WebAssembly:
+### 4. Build WebAssembly Static Site
 ```bash
 Rscript app/export_shinylive.R
 ```
-The compiled static website will be created in `dist_web/`, ready to be hosted on GitHub Pages, Netlify, or Vercel.
+Compiles static site assets into `dist_web/`.
 
 ---
 
-## 📁 Repository Structure
+## Repository Structure
 
 ```
 SciDataView/
-├── .gitignore                   # Excludes binaries (R-Portable, library, dist_web)
-├── LICENSE                      # MIT License
-├── README.md                    # Project documentation
-├── install_deps.R               # One-click dependency installer for R developers
-├── SciDataView.lnk              # Desktop launcher shortcut
-│
-└── app/
-    ├── app.R                    # Core Shiny application & profiling engine
-    ├── export_shinylive.R       # WebAssembly export script
-    ├── run_app.R                # Process manager & port allocator
-    ├── SciDataView.bat          # Windows batch runner (with R-Portable/PATH fallback)
-    ├── SciDataView.vbs          # Silent background launcher
-    └── icon/                    # Application icons (.ico, .svg, .png)
+├── .github/workflows/deploy_web.yml   # Automatic GitHub Pages deployment
+├── .gitignore                         # Ignores R-Portable, local packages, and dist_web
+├── app/
+│   ├── app.R                          # Main application logic
+│   ├── export_shinylive.R             # Shinylive export script
+│   ├── run_app.R                      # Process manager and browser launcher
+│   ├── SciDataView.bat                # Windows launcher (with Rscript fallback)
+│   ├── SciDataView.vbs                # Silent background runner
+│   └── icon/                          # Application icons
+├── install_deps.R                     # Dependency installation script
+├── LICENSE                            # MIT License
+├── README.md
+└── SciDataView.lnk
 ```
-
-> **Note for Contributors:** The binary R-Portable distribution and local compiled package libraries are strictly excluded from git tracking via `.gitignore` to keep the repository lightweight (< 500 KB).
 
 ---
 
-## 📄 License
+## License
 
-This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
+MIT License. See [LICENSE](LICENSE) for details.
