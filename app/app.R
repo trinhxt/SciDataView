@@ -25,12 +25,8 @@
 suppressPackageStartupMessages({
   library(shiny)
   library(bslib)
-  library(dplyr)
-  library(purrr)
-  library(tibble)
   library(data.table)
   library(readxl)
-  library(haven)
   library(later)
 })
 # Set max upload size to 1 GB
@@ -133,9 +129,18 @@ read_any_table <- function(file_path, sheet = 1, skip = "auto") {
       "xlsx"     = as.data.frame(readxl::read_excel(file_path, sheet = sheet, skip = skip_n)),
       "xls"      = as.data.frame(readxl::read_excel(file_path, sheet = sheet, skip = skip_n)),
       "rds"      = as.data.frame(readRDS(file_path)),
-      "dta"      = as.data.frame(haven::read_dta(file_path)),
-      "sav"      = as.data.frame(haven::read_spss(file_path)),
-      "sas7bdat" = as.data.frame(haven::read_sas(file_path)),
+      "dta"      = {
+        if (!requireNamespace("haven", quietly = TRUE)) stop("Package 'haven' is required to read Stata (.dta) files.")
+        as.data.frame(haven::read_dta(file_path))
+      },
+      "sav"      = {
+        if (!requireNamespace("haven", quietly = TRUE)) stop("Package 'haven' is required to read SPSS (.sav) files.")
+        as.data.frame(haven::read_spss(file_path))
+      },
+      "sas7bdat" = {
+        if (!requireNamespace("haven", quietly = TRUE)) stop("Package 'haven' is required to read SAS (.sas7bdat) files.")
+        as.data.frame(haven::read_sas(file_path))
+      },
       "parquet"  = as.data.frame(arrow::read_parquet(file_path)),
       "feather"  = as.data.frame(arrow::read_feather(file_path)),
       "arrow"    = as.data.frame(arrow::read_ipc_file(file_path)),
@@ -377,7 +382,7 @@ check_hygiene_flags <- function(df, col_inv, num_summary = NULL, duplicates_n = 
   }
   
   # 2. Severe Missingness (> 50%)
-  severe_miss <- col_inv %>% filter(Missing_Pct > 50)
+  severe_miss <- col_inv[col_inv$Missing_Pct > 50, , drop = FALSE]
   if (nrow(severe_miss) > 0) {
     flags <- c(flags, list(list(
       level = "warning",
@@ -390,7 +395,9 @@ check_hygiene_flags <- function(df, col_inv, num_summary = NULL, duplicates_n = 
   }
   
   # 3. High-Cardinality Text (Potential Leak / Dirty ID)
-  high_card <- col_inv %>% filter(Data_Type %in% c("Text Variable", "Categorical String") & Distinct_N > (n_rows * 0.8) & Distinct_N != n_rows)
+  high_card <- col_inv[col_inv$Data_Type %in% c("Text Variable", "Categorical String") & 
+                       col_inv$Distinct_N > (n_rows * 0.8) & 
+                       col_inv$Distinct_N != n_rows, , drop = FALSE]
   if (nrow(high_card) > 0) {
     flags <- c(flags, list(list(
       level = "info",
@@ -404,7 +411,7 @@ check_hygiene_flags <- function(df, col_inv, num_summary = NULL, duplicates_n = 
   
   # 4. Zero-Inflated Continuous Features
   if (!is.null(num_summary) && nrow(num_summary) > 0) {
-    zero_inf <- num_summary %>% filter(Zero_Count > (n_rows * 0.40))
+    zero_inf <- num_summary[num_summary$Zero_Count > (n_rows * 0.40), , drop = FALSE]
     if (nrow(zero_inf) > 0) {
       flags <- c(flags, list(list(
         level = "notice",
@@ -450,18 +457,18 @@ check_hygiene_flags <- function(df, col_inv, num_summary = NULL, duplicates_n = 
 
 # Modular compute helpers for lazy evaluation
 compute_numeric_profile <- function(df_proc, num_cols) {
-  if (length(num_cols) == 0) return(tibble())
-  map_dfr(num_cols, function(v) {
+  if (length(num_cols) == 0) return(data.frame())
+  data.table::rbindlist(lapply(num_cols, function(v) {
     vals <- df_proc[[v]]
     vals_c <- vals[!is.na(vals)]
     if (length(vals_c) == 0) {
-      return(tibble(
+      return(list(
         Variable = v, Distribution_SVG = "<span style='color:#86868B;'>-</span>",
         Mean = NA_real_, SD = NA_real_, Min = NA_real_,
         Q1 = NA_real_, Median = NA_real_, Q3 = NA_real_, Max = NA_real_, IQR = NA_real_,
         Skewness = NA_real_,
-        Outliers_N = 0, Outliers_Pct = 0.0,
-        Reporting_Hint = "Insufficient data", Zero_Count = 0
+        Outliers_N = 0L, Outliers_Pct = 0.0,
+        Reporting_Hint = "Insufficient data", Zero_Count = 0L
       ))
     }
     q <- unname(quantile(vals_c, probs = c(0.25, 0.50, 0.75), na.rm = TRUE))
@@ -478,7 +485,7 @@ compute_numeric_profile <- function(df_proc, num_cols) {
       "Skewed: Median [IQR]"
     }
     
-    tibble(
+    list(
       Variable         = v,
       Distribution_SVG = generate_svg_sparkline(vals_c),
       Mean             = round(mean(vals_c), 2),
@@ -493,25 +500,25 @@ compute_numeric_profile <- function(df_proc, num_cols) {
       Outliers_N       = as.integer(out["count"]),
       Outliers_Pct     = as.numeric(out["pct"]),
       Reporting_Hint   = hint_str,
-      Zero_Count       = sum(vals_c == 0)
+      Zero_Count       = as.integer(sum(vals_c == 0))
     )
-  })
+  }))
 }
 
 compute_categorical_profile <- function(df_proc, cat_cols, n_rows) {
-  if (length(cat_cols) == 0) return(tibble())
-  map_dfr(cat_cols, function(v) {
+  if (length(cat_cols) == 0) return(data.frame())
+  data.table::rbindlist(lapply(cat_cols, function(v) {
     vals <- as.character(df_proc[[v]])
     tab <- sort(table(vals, useNA = "no"), decreasing = TRUE)
     top_k <- head(tab, 5)
     k_str <- paste(sprintf("%s: %s (%.1f%%)", names(top_k), format(as.numeric(top_k), big.mark = ","), 100 * as.numeric(top_k) / max(1, n_rows)), collapse = "; ")
     if (length(tab) > 5) k_str <- paste0(k_str, sprintf(" [and %d more levels]", length(tab) - 5))
-    tibble(
+    list(
       Variable       = v,
       Total_Levels   = length(tab),
       Top_Categories = k_str
     )
-  })
+  }))
 }
 
 # Dimensionality guard: Limits correlation matrix to max_vars (default 35) by highest variance
@@ -583,7 +590,7 @@ profile_dataset <- function(df, type_overrides = list(), lazy = FALSE) {
   missing_rate <- if (n_cells > 0) round((n_missing / n_cells) * 100, 2) else 0.0
   
   # Column inventory table with Data type diagnosis & visual missing progress bar
-  col_inv <- tibble(
+  col_inv <- data.frame(
     Index        = seq_len(n_cols),
     Column_Name  = names(df_proc),
     Data_Type    = sapply(names(df_proc), function(nm) {
@@ -594,9 +601,9 @@ profile_dataset <- function(df, type_overrides = list(), lazy = FALSE) {
       if (inherits(x, c("Date", "POSIXt"))) {
         "Date / Time"
       } else if (is.numeric(x)) {
-        if (all(x == floor(x), na.rm = TRUE) && n_distinct(x, na.rm = TRUE) <= 6) {
+        if (all(x == floor(x), na.rm = TRUE) && data.table::uniqueN(x, na.rm = TRUE) <= 6) {
           "Discrete / Categorical"
-        } else if (grepl("id$|_id$|^id$", nm, ignore.case = TRUE) && n_distinct(x, na.rm = TRUE) > 50) {
+        } else if (grepl("id$|_id$|^id$", nm, ignore.case = TRUE) && data.table::uniqueN(x, na.rm = TRUE) > 50) {
           "Identifier (ID)"
         } else {
           "Continuous Numeric"
@@ -604,9 +611,9 @@ profile_dataset <- function(df, type_overrides = list(), lazy = FALSE) {
       } else if (is.factor(x) || is.logical(x)) {
         "Factor / Categorical"
       } else if (is.character(x)) {
-        if (n_distinct(x, na.rm = TRUE) <= 25) {
+        if (data.table::uniqueN(x, na.rm = TRUE) <= 25) {
           "Categorical String"
-        } else if (n_distinct(x, na.rm = TRUE) == n_rows) {
+        } else if (data.table::uniqueN(x, na.rm = TRUE) == n_rows) {
           "Unique Key / ID"
         } else {
           "Text Variable"
@@ -619,17 +626,16 @@ profile_dataset <- function(df, type_overrides = list(), lazy = FALSE) {
     Complete_N   = sapply(df_proc, function(x) sum(!is.na(x) & x != "")),
     Missing_N    = sapply(df_proc, function(x) sum(is.na(x) | x == "")),
     Missing_Pct  = round(100 * sapply(df_proc, function(x) sum(is.na(x) | x == "")) / max(1, n_rows), 1),
-    Distinct_N   = sapply(df_proc, function(x) n_distinct(x, na.rm = TRUE)),
+    Distinct_N   = sapply(df_proc, function(x) data.table::uniqueN(x, na.rm = TRUE)),
     Sample_Value = sapply(df_proc, function(x) {
       valid <- x[!is.na(x) & x != ""]
       if (length(valid) == 0) return("-")
       val <- as.character(valid[1])
       if (nchar(val) > 28) paste0(substr(val, 1, 25), "...") else val
-    })
-  ) %>%
-    mutate(
-      Missing_Bar = sapply(Missing_Pct, generate_missing_bar)
-    )
+    }),
+    stringsAsFactors = FALSE
+  )
+  col_inv$Missing_Bar <- sapply(col_inv$Missing_Pct, generate_missing_bar)
   
   # Identify numeric & categorical column candidates
   non_num_types <- c("Identifier (ID)", "Unique Key / ID", "Categorical String", "Text Variable", "Discrete / Categorical", "Date / Time")
@@ -642,7 +648,7 @@ profile_dataset <- function(df, type_overrides = list(), lazy = FALSE) {
   cat_cols <- if (length(cat_candidates) > 0) {
     cat_candidates[vapply(cat_candidates, function(v) {
       x <- df_proc[[v]]
-      is.character(x) || is.factor(x) || is.logical(x) || (is.numeric(x) && n_distinct(x) <= 10)
+      is.character(x) || is.factor(x) || is.logical(x) || (is.numeric(x) && data.table::uniqueN(x) <= 10)
     }, FUN.VALUE = logical(1))]
   } else {
     character(0)

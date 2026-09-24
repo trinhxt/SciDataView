@@ -46,8 +46,7 @@ if (dir.exists(user_lib) && !(user_lib %in% .libPaths())) {
 
 # 3. Pre-flight package check & automatic dependency installation
 core_packages <- c(
-  "shiny", "httpuv", "bslib", "dplyr", "purrr", "tibble",
-  "data.table", "readr", "readxl", "haven", "later", "vroom"
+  "shiny", "httpuv", "bslib", "data.table", "readxl", "later"
 )
 missing_packages <- core_packages[!vapply(core_packages, requireNamespace, logical(1), quietly = TRUE)]
 

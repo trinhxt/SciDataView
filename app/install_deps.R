@@ -9,20 +9,15 @@ required_packages <- c(
   "shiny",
   "httpuv",
   "bslib",
-  "readr",
-  "readxl",
-  "haven",
-  "vroom",
-  "tibble",
-  "dplyr",
-  "purrr",
   "data.table",
+  "readxl",
   "later",
   "shinylive"
 )
 
-# Optional packages for high-performance serialized formats (Parquet, Feather, FST, QS)
+# Optional packages for high-performance serialized & statistical formats
 optional_packages <- c(
+  "haven",
   "arrow",
   "fst",
   "qs",
