@@ -41,5 +41,6 @@ Desktop.ini
 $RECYCLE.BIN/
 .DS_Store
 
-#
+# Windows shortcut files
 *.lnk
+SciDataView.lnk
