@@ -2,11 +2,12 @@
 
 An R-based app for reading and summarizing many data table formats.
 
-[![Launch Web App](https://img.shields.io/badge/Launch_App-0078D4?style=for-the-badge&logo=googlechrome&logoColor=white)](https://trinhxt.github.io/SciDataView/)
 
 ## Usage
 
 Open **[https://trinhxt.github.io/SciDataView/](https://trinhxt.github.io/SciDataView/)** in any modern browser. No installation required. All data processing runs locally in your browser via WebAssembly - nothing is uploaded.
+
+[![Launch Web App](https://img.shields.io/badge/Launch_App-0078D4?style=for-the-badge&logo=googlechrome&logoColor=white)](https://trinhxt.github.io/SciDataView/)
 
 ## Capabilities
 
@@ -21,7 +22,6 @@ Open **[https://trinhxt.github.io/SciDataView/](https://trinhxt.github.io/SciDat
 
 ### Analysis Features
 
-- **Quality Screening** - Flags zero-variance columns, high missingness (>50%), near-empty columns (>90%), duplicate rows.
 - **Column Inventory** - Inferred types, missing rates, distinct counts, interactive type casting.
 - **Numeric Profiles** - Sparkline distributions, mean, SD, median, IQR, skewness, Tukey outlier counts.
 - **Categorical Breakdown** - Unique level counts and top-level frequencies.
