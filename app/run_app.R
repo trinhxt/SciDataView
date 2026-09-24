@@ -18,11 +18,17 @@ if (length(file_arg) > 0) {
   app_dir  <- file.path(root_dir, "app")
 }
 
-lib_dir <- if (dir.exists(file.path(app_dir, "library"))) file.path(app_dir, "library") else file.path(root_dir, "library")
-r_lib   <- if (dir.exists(file.path(app_dir, "R-Portable", "library"))) file.path(app_dir, "R-Portable", "library") else file.path(root_dir, "R-Portable", "library")
+# If standalone portable libraries exist, prioritize them while keeping system libs as fallback
+bundled_libs <- c(
+  if (dir.exists(file.path(app_dir, "library"))) file.path(app_dir, "library"),
+  if (dir.exists(file.path(root_dir, "library"))) file.path(root_dir, "library"),
+  if (dir.exists(file.path(app_dir, "R-Portable", "library"))) file.path(app_dir, "R-Portable", "library"),
+  if (dir.exists(file.path(root_dir, "R-Portable", "library"))) file.path(root_dir, "R-Portable", "library")
+)
 
-# Restrict .libPaths strictly to bundled packages
-.libPaths(c(lib_dir, r_lib))
+if (length(bundled_libs) > 0) {
+  .libPaths(unique(c(bundled_libs, .libPaths())))
+}
 
 suppressPackageStartupMessages({
   library(shiny)
