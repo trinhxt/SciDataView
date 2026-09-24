@@ -55,7 +55,7 @@ shinylive::export(
   appdir  = staging_dir,
   destdir = dest_dir,
   template_params = list(
-    title = "SciDataView - Universal Scientific Data Profiler",
+    title = "SciDataView",
     include_in_head = paste(
       '<link rel="icon" type="image/x-icon" href="icon/app.ico">',
       '<link rel="icon" type="image/png" sizes="192x192" href="icon/app_icon.png">',

@@ -1024,12 +1024,6 @@ generate_html_report <- function(file_name, p, df = NULL) {
       <div class="kpi-card"><div class="kpi-label">Duplicate Rows</div><div class="kpi-val">%s</div></div>
     </div>
 
-    <!-- Data Quality Screening Flags -->
-    <div class="card">
-      <div class="card-title">Data Quality &amp; Hygiene Screening</div>
-      %s
-    </div>
-
     <!-- Column Inventory Table with Missingness Bars -->
     <div class="card">
       <div class="card-title">Column Inventory &amp; Missingness</div>
@@ -1105,7 +1099,7 @@ generate_html_report <- function(file_name, p, df = NULL) {
     basename(file_name), app_logo_svg, basename(file_name), format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
     if (isTRUE(p$skip_rows > 0)) sprintf(" | Skipped %d title row(s)", p$skip_rows) else "",
     format(p$rows, big.mark = ","), format(p$cols, big.mark = ","), p$memory, p$missing_rate, format(p$duplicates, big.mark = ","),
-    hygiene_html, inv_rows, num_rows, cat_rows, cor_html,
+    inv_rows, num_rows, cat_rows, cor_html,
     format(Sys.time(), "%Y-%m-%d %H:%M:%S")
   )
 }
@@ -1959,10 +1953,10 @@ html.shiny-busy .app-busy-indicator {
 "
 
 ui <- fluidPage(
-  title = "SciDataView - Universal Scientific Data Profiler",
+  title = "SciDataView",
   theme = bslib::bs_theme(version = 5),
   tags$head(
-    tags$title("SciDataView - Universal Scientific Data Profiler"),
+    tags$title("SciDataView"),
     tags$link(rel = "icon", type = "image/x-icon", href = "icon/app.ico"),
     tags$link(rel = "icon", type = "image/png", sizes = "192x192", href = "icon/app_icon.png"),
     tags$link(rel = "icon", type = "image/svg+xml", href = "icon/app_icon.svg"),

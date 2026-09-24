@@ -2,10 +2,10 @@
 
 Fast tabular data profiler for scientific and analytical datasets.
 
-[![Live Web App](https://img.shields.io/badge/Launch-WebAssembly%20App-0078D4?style=for-the-badge&logo=googlechrome&logoColor=white)](https://trinhxt.github.io/SciDataView/)
+<a href="https://trinhxt.github.io/SciDataView/" target="_blank"><img src="https://img.shields.io/badge/Launch-WebAssembly%20App-0078D4?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Live Web App"></a>
 
-👉 **Use Online Immediately**: **[https://trinhxt.github.io/SciDataView/](https://trinhxt.github.io/SciDataView/)**  
-*(Runs 100% client-side inside your browser via WebAssembly/webR. Zero installation required, completely private with no data uploaded to any server).*
+👉 **Use Online Immediately**: <a href="https://trinhxt.github.io/SciDataView/" target="_blank"><b>https://trinhxt.github.io/SciDataView/</b></a>
+*(Runs 100% client-side inside your browser via WebAssembly/webR. Zero installation required, completely private — no data uploaded to any server).*
 
 ---
 
@@ -31,26 +31,7 @@ Fast tabular data profiler for scientific and analytical datasets.
 
 ## Usage
 
-### 1. Web Version (For Everyone / Sharing)
-Open **[https://trinhxt.github.io/SciDataView/](https://trinhxt.github.io/SciDataView/)** in any modern web browser (Windows, macOS, Linux, iPadOS, ChromeOS). No setup or R installation needed.
-
-### 2. Windows Desktop (1-Click Local Launch)
-For power users profiling large datasets with native CPU/RAM performance:
-- Double-click **`SciDataView.lnk`** in the root folder (or run `app/SciDataView.bat`).
-- Automatically detects system R or local R-Portable, checks and installs missing dependencies on first launch, and starts the desktop app.
-
-### 3. CLI Batch Mode
-Run non-interactive profiling from terminal:
-```bash
-Rscript app/app.R "path/to/data.csv"
-```
-Outputs `<filename>_data_summary.txt` and `<filename>_data_profile.html`.
-
-### 4. Build WebAssembly Static Site Locally
-```bash
-Rscript app/export_shinylive.R
-```
-Compiles static site assets into `dist_web/`.
+Open <a href="https://trinhxt.github.io/SciDataView/" target="_blank"><b>https://trinhxt.github.io/SciDataView/</b></a> in any modern browser (Windows, macOS, Linux, iPadOS, ChromeOS). No installation or R required. Upload your data file and the profiler runs entirely inside your browser.
 
 ---
 
