@@ -24,9 +24,9 @@ if (dir.exists(lib_dir)) {
 if (!requireNamespace("shinylive", quietly = TRUE)) {
   message("Package 'shinylive' is not installed. Installing from CRAN...")
   if (dir.exists(lib_dir)) {
-    install.packages("shinylive", lib = lib_dir, repos = "https://cloud.r-project.org")
+    install.packages("shinylive", lib = lib_dir)
   } else {
-    install.packages("shinylive", repos = "https://cloud.r-project.org")
+    install.packages("shinylive")
   }
 }
 

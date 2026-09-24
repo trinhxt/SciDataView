@@ -30,10 +30,7 @@ if (length(bundled_libs) > 0) {
   .libPaths(unique(c(bundled_libs, .libPaths())))
 }
 
-# 2. Ensure a writable user library is available and CRAN mirror configured
-if (identical(getOption("repos"), c(CRAN = "@CRAN@")) || is.null(getOption("repos")["CRAN"])) {
-  options(repos = c(CRAN = "https://cloud.r-project.org"))
-}
+# 2. Ensure a writable user library is available
 
 user_lib <- Sys.getenv("R_LIBS_USER")
 if (!nzchar(user_lib)) {

@@ -67,15 +67,6 @@ get_app_icon_svg <- function() {
 # 1. CORE UTILITIES & UNIVERSAL FILE READER
 # ==============================================================================
 
-# Resolve output directory for batch reports
-resolve_output_dir <- function() {
-  candidates <- c("Output", "03-Output", "../Output", "../03-Output")
-  for (cand in candidates) {
-    if (dir.exists(cand)) return(cand)
-  }
-  "."
-}
-
 # Automatic header row / title skip detector
 detect_title_skip <- function(file_path, ext = NULL, sheet = 1, max_scan = 20) {
   if (is.null(ext)) ext <- tolower(tools::file_ext(file_path))
@@ -3154,7 +3145,7 @@ if (!interactive()) {
   
   if (length(args) > 0 && file.exists(args[1])) {
     input_file <- args[1]
-    output_dir <- resolve_output_dir()
+    output_dir <- "."
     
     cat("==============================================================================\n")
     cat("SCIDATAVIEW - UNIVERSAL DATASET PROFILER (CLI BATCH MODE)\n")
