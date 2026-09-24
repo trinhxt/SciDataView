@@ -30,26 +30,35 @@ message("-----------------------------------------------------------------------
 message("Checking and installing core packages for SciDataView...")
 message("------------------------------------------------------------------------------")
 
+# Ensure valid CRAN mirror if not already set by environment/RSPM
+if (identical(getOption("repos"), c(CRAN = "@CRAN@")) || is.null(getOption("repos")["CRAN"])) {
+  options(repos = c(CRAN = "https://cloud.r-project.org"))
+}
+
 for (pkg in required_packages) {
   if (!requireNamespace(pkg, quietly = TRUE)) {
     message(sprintf("Installing package: %s ...", pkg))
-    install.packages(pkg, repos = "https://cloud.r-project.org")
+    install.packages(pkg)
   } else {
     message(sprintf("  [OK] %s is already installed.", pkg))
   }
 }
 
-message("\nChecking optional serialized format packages (Arrow, FST, QS)...")
-for (pkg in optional_packages) {
-  if (!requireNamespace(pkg, quietly = TRUE)) {
-    tryCatch({
-      install.packages(pkg, repos = "https://cloud.r-project.org")
-      message(sprintf("  [OK] Installed optional: %s", pkg))
-    }, error = function(e) {
-      message(sprintf("  [SKIP] Optional package '%s' skipped (%s)", pkg, e$message))
-    })
-  } else {
-    message(sprintf("  [OK] %s is already installed.", pkg))
+# Only check optional serial packages if not running in CI (avoids slow C++ builds on Linux runners)
+is_ci <- nzchar(Sys.getenv("CI")) || nzchar(Sys.getenv("GITHUB_ACTIONS"))
+if (!is_ci) {
+  message("\nChecking optional serialized format packages (Arrow, FST, QS)...")
+  for (pkg in optional_packages) {
+    if (!requireNamespace(pkg, quietly = TRUE)) {
+      tryCatch({
+        install.packages(pkg)
+        message(sprintf("  [OK] Installed optional: %s", pkg))
+      }, error = function(e) {
+        message(sprintf("  [SKIP] Optional package '%s' skipped (%s)", pkg, e$message))
+      })
+    } else {
+      message(sprintf("  [OK] %s is already installed.", pkg))
+    }
   }
 }
 
