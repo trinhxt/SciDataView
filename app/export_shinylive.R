@@ -17,13 +17,17 @@ lib_dir  <- file.path(app_dir, "library")
 r_lib    <- file.path(app_dir, "R-Portable", "library")
 
 if (dir.exists(lib_dir)) {
-  .libPaths(c(lib_dir, r_lib))
+  .libPaths(unique(c(lib_dir, r_lib, .libPaths())))
 }
 
 # 1. Check or install shinylive package
 if (!requireNamespace("shinylive", quietly = TRUE)) {
-  message("Package 'shinylive' is not installed in app library. Installing from CRAN...")
-  install.packages("shinylive", lib = lib_dir, repos = "https://cloud.r-project.org")
+  message("Package 'shinylive' is not installed. Installing from CRAN...")
+  if (dir.exists(lib_dir)) {
+    install.packages("shinylive", lib = lib_dir, repos = "https://cloud.r-project.org")
+  } else {
+    install.packages("shinylive", repos = "https://cloud.r-project.org")
+  }
 }
 
 library(shinylive)
@@ -50,7 +54,7 @@ message("Packaging app with WebAssembly assets...")
 shinylive::export(
   appdir  = staging_dir,
   destdir = dest_dir,
-  verbose = TRUE
+  quiet   = FALSE
 )
 
 # Clean up staging
