@@ -11,7 +11,7 @@ Open **[https://trinhxt.github.io/SciDataView/](https://trinhxt.github.io/SciDat
 
 ## Capabilities
 
-### Supported Formats
+### Read many data table formats
 
 | Category | Formats |
 |----------|---------|
@@ -20,7 +20,7 @@ Open **[https://trinhxt.github.io/SciDataView/](https://trinhxt.github.io/SciDat
 | Statistical software | Stata `.dta`, SPSS `.sav`, SAS `.sas7bdat` |
 | Serialized | Parquet, Arrow, Feather, FST, QS/QS2, RDS |
 
-### Analysis Features
+### Analysis features
 
 - **Column Inventory** - Inferred types, missing rates, distinct counts, interactive type casting.
 - **Numeric Profiles** - Sparkline distributions, mean, SD, median, IQR, skewness, Tukey outlier counts.
