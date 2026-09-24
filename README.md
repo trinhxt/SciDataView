@@ -2,10 +2,10 @@
 
 Fast tabular data profiler for scientific and analytical datasets.
 
-<a href="https://trinhxt.github.io/SciDataView/" target="_blank"><img src="https://img.shields.io/badge/Launch-WebAssembly%20App-0078D4?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Live Web App"></a>
+[![Launch Web App](https://img.shields.io/badge/Launch-WebAssembly%20App-0078D4?style=for-the-badge&logo=googlechrome&logoColor=white)](https://trinhxt.github.io/SciDataView/)
 
-👉 **Use Online Immediately**: <a href="https://trinhxt.github.io/SciDataView/" target="_blank"><b>https://trinhxt.github.io/SciDataView/</b></a>
-*(Runs 100% client-side inside your browser via WebAssembly/webR. Zero installation required, completely private — no data uploaded to any server).*
+👉 **Use Online**: **[https://trinhxt.github.io/SciDataView/](https://trinhxt.github.io/SciDataView/)**
+*(Runs 100% client-side in your browser via WebAssembly/webR. Zero installation required, completely private — no data uploaded to any server).*
 
 ---
 
@@ -31,7 +31,7 @@ Fast tabular data profiler for scientific and analytical datasets.
 
 ## Usage
 
-Open <a href="https://trinhxt.github.io/SciDataView/" target="_blank"><b>https://trinhxt.github.io/SciDataView/</b></a> in any modern browser (Windows, macOS, Linux, iPadOS, ChromeOS). No installation or R required. Upload your data file and the profiler runs entirely inside your browser.
+Open **[https://trinhxt.github.io/SciDataView/](https://trinhxt.github.io/SciDataView/)** in any modern browser (Windows, macOS, Linux, iPadOS, ChromeOS). No installation or R required. Upload your data file and the profiler runs entirely inside your browser.
 
 ---
 
