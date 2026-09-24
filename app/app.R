@@ -36,6 +36,17 @@ suppressPackageStartupMessages({
 # Set max upload size to 1 GB
 options(shiny.maxRequestSize = 2000 * 1024^2)
 
+# Shinylive / Chromium WebAssembly download fix:
+# Standard shiny::downloadButton includes an empty HTML5 `download` attribute.
+# In Shinylive (WebAssembly), Chromium browsers (Chrome, Edge) use the DOM element ID
+# instead of the Content-Disposition filename, resulting in `btn_download_*.htm`.
+# Removing `download` allows the server-defined filename and extension to take effect.
+downloadButton <- function(...) {
+  tag <- shiny::downloadButton(...)
+  tag$attribs$download <- NULL
+  tag
+}
+
 # Serve icon assets statically from app/icon
 icon_dir <- if (dir.exists("app/icon")) "app/icon" else if (dir.exists("icon")) "icon" else "."
 try(shiny::addResourcePath("icon", normalizePath(icon_dir, mustWork = FALSE)), silent = TRUE)
@@ -2556,7 +2567,8 @@ server <- function(input, output, session) {
       req(rv$raw_df, rv$profile)
       full_p <- ensure_full_profile(rv$raw_df, rv$profile)
       writeLines(generate_html_report(rv$file_name, full_p), con = file, useBytes = TRUE)
-    }
+    },
+    contentType = "text/html"
   )
   
   # Top TXT Export Button
@@ -2577,7 +2589,8 @@ server <- function(input, output, session) {
       req(rv$raw_df, rv$profile)
       full_p <- ensure_full_profile(rv$raw_df, rv$profile)
       writeLines(generate_text_report(rv$file_name, full_p), con = file, useBytes = TRUE)
-    }
+    },
+    contentType = "text/plain"
   )
   
   # Metric KPI Cards
