@@ -6,7 +6,7 @@ An R-based app for reading and summarizing many data table formats.
 
 ## Usage
 
-Open **[https://trinhxt.github.io/SciDataView/](https://trinhxt.github.io/SciDataView/)** in any modern browser. No installation required. All data processing runs locally in your browser via WebAssembly — nothing is uploaded.
+Open **[https://trinhxt.github.io/SciDataView/](https://trinhxt.github.io/SciDataView/)** in any modern browser. No installation required. All data processing runs locally in your browser via WebAssembly - nothing is uploaded.
 
 ## Capabilities
 
@@ -21,14 +21,14 @@ Open **[https://trinhxt.github.io/SciDataView/](https://trinhxt.github.io/SciDat
 
 ### Analysis Features
 
-- **Quality Screening** — Flags zero-variance columns, high missingness (>50%), near-empty columns (>90%), duplicate rows.
-- **Column Inventory** — Inferred types, missing rates, distinct counts, interactive type casting.
-- **Numeric Profiles** — Sparkline distributions, mean, SD, median, IQR, skewness, Tukey outlier counts.
-- **Categorical Breakdown** — Unique level counts and top-level frequencies.
-- **Correlation Matrix** — Pearson correlations with click-to-view scatter plots.
-- **Data Inspector** — Multi-column text search with pagination.
-- **Export** — Self-contained HTML report and plain-text summary.
+- **Quality Screening** - Flags zero-variance columns, high missingness (>50%), near-empty columns (>90%), duplicate rows.
+- **Column Inventory** - Inferred types, missing rates, distinct counts, interactive type casting.
+- **Numeric Profiles** - Sparkline distributions, mean, SD, median, IQR, skewness, Tukey outlier counts.
+- **Categorical Breakdown** - Unique level counts and top-level frequencies.
+- **Correlation Matrix** - Pearson correlations with click-to-view scatter plots.
+- **Data Inspector** - Multi-column text search with pagination.
+- **Export** - Self-contained HTML report and plain-text summary.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT - see [LICENSE](LICENSE).
