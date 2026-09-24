@@ -30,6 +30,38 @@ if (length(bundled_libs) > 0) {
   .libPaths(unique(c(bundled_libs, .libPaths())))
 }
 
+# 2. Ensure a writable user library is available and CRAN mirror configured
+if (identical(getOption("repos"), c(CRAN = "@CRAN@")) || is.null(getOption("repos")["CRAN"])) {
+  options(repos = c(CRAN = "https://cloud.r-project.org"))
+}
+
+user_lib <- Sys.getenv("R_LIBS_USER")
+if (!nzchar(user_lib)) {
+  user_lib <- file.path(Sys.getenv("USERPROFILE"), "Documents", "R", "win-library",
+                        paste0(R.version$major, ".", sub("\\..*", "", R.version$minor)))
+}
+if (!dir.exists(user_lib)) {
+  tryCatch(dir.create(user_lib, recursive = TRUE, showWarnings = FALSE), error = function(e) NULL)
+}
+if (dir.exists(user_lib) && !(user_lib %in% .libPaths())) {
+  .libPaths(c(user_lib, .libPaths()))
+}
+
+# 3. Pre-flight package check & automatic dependency installation
+core_packages <- c(
+  "shiny", "httpuv", "bslib", "dplyr", "purrr", "tibble",
+  "data.table", "readr", "readxl", "haven", "later", "vroom"
+)
+missing_packages <- core_packages[!vapply(core_packages, requireNamespace, logical(1), quietly = TRUE)]
+
+if (length(missing_packages) > 0) {
+  message("================================================================================")
+  message("[SciDataView] Missing required package(s): ", paste(missing_packages, collapse = ", "))
+  message("[SciDataView] Installing dependencies from CRAN. Please wait a moment...")
+  message("================================================================================")
+  install.packages(missing_packages)
+}
+
 suppressPackageStartupMessages({
   library(shiny)
   library(httpuv)

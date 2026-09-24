@@ -1,0 +1,87 @@
+name: Build & Release SciDataView
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: 'Release version (e.g. 1.0)'
+        required: false
+        default: '1.0'
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build SciDataView Release Package
+        shell: pwsh
+        run: |
+          # Determine release version
+          $ver = "1.0"
+          if ($env:GITHUB_REF -like "refs/tags/v*") {
+            $ver = $env:GITHUB_REF.Substring(11)
+          } elseif ($env:GITHUB_REF -like "refs/tags/*") {
+            $ver = $env:GITHUB_REF.Substring(10)
+          } elseif ("${{ inputs.release_version }}" -ne "") {
+            $ver = "${{ inputs.release_version }}"
+          }
+          $zipName = "SciDataView-$ver.zip"
+          Write-Host "[INFO] Building package: $zipName"
+
+          # 1. Ensure app/ has all scripts
+          Copy-Item "install_deps.R" "app/install_deps.R" -Force
+
+          # 2. Build portable Windows shortcut (.lnk) at root
+          $wsh = New-Object -ComObject WScript.Shell
+          $shortcut = $wsh.CreateShortcut("$pwd\SciDataView.lnk")
+          $shortcut.TargetPath = "%windir%\system32\cmd.exe"
+          $shortcut.Arguments = "/c call app\SciDataView.bat"
+          $shortcut.WorkingDirectory = ""
+          $shortcut.IconLocation = "app\icon\app.ico,0"
+          $shortcut.Description = "SciDataView - Universal Scientific Data Profiler"
+          $shortcut.Save()
+
+          # 3. Create staging directory
+          $stage = "$env:TEMP\SciDataView_Stage"
+          if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+          $packageDir = "$stage\SciDataView"
+          New-Item -ItemType Directory -Path $packageDir -Force | Out-Null
+
+          # Copy root files: README, LICENSE, and OS click shortcuts
+          Copy-Item "README.md" $packageDir -Force
+          Copy-Item "LICENSE" $packageDir -Force
+          Copy-Item "SciDataView.lnk" $packageDir -Force
+          Copy-Item "SciDataView.command" $packageDir -Force
+          Copy-Item "SciDataView.sh" $packageDir -Force
+
+          # Copy app/ folder (containing app.R, run_app.R, SciDataView.bat, SciDataView.sh, install_deps.R, icon/)
+          Copy-Item "app" $packageDir -Recurse -Force
+
+          # Compress to zip archive
+          Compress-Archive -Path $packageDir -DestinationPath $zipName -CompressionLevel Optimal
+
+          # If tagged as v1.0, also create SciDataView-1.0.zip as standard alias
+          if ($zipName -ne "SciDataView-1.0.zip" -and $ver -eq "1.0") {
+            Copy-Item $zipName "SciDataView-1.0.zip" -Force
+          }
+
+          Remove-Item $stage -Recurse -Force
+          Write-Host "[SUCCESS] Created: $zipName ($((Get-Item $zipName).Length / 1KB | ForEach-Object { '{0:N1} KB' -f $_ }))"
+
+      - name: Create GitHub Release and Upload Assets
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        with:
+          files: |
+            SciDataView-*.zip
+          draft: false
+          prerelease: false
+          generate_release_notes: true

@@ -31,20 +31,23 @@ Available as:
 
 ## Quick Start
 
-### 1. Windows Portable (No R installation required)
-1. Download `SciDataView-Windows-Portable.zip` from [Releases](https://github.com/trinhxt/SciDataView/releases).
-2. Extract the archive.
-3. Double-click `SciDataView.lnk` (or `app/SciDataView.bat`).
+### 1. Direct 1-Click Launch (Recommended)
+After cloning or downloading the repository:
+- Double-click **`SciDataView.lnk`** in the root folder (or run **`app/SciDataView.bat`**).
+- **Smart Runtime Auto-Detection**:
+  - Automatically detects local `R-Portable` or system-installed R (via PATH, Registry, or Program Files).
+  - Automatically verifies and installs missing R packages from CRAN on first run.
+  - If R is not installed on the system, offers an automated setup wizard to download and configure R-Portable seamlessly.
 
-### 2. Run with Existing R
+### 2. Manual CLI Launch
 ```bash
 git clone https://github.com/trinhxt/SciDataView.git
 cd SciDataView
 
-# Install dependencies
+# Optional manual dependency install (auto-installed on launch if omitted):
 Rscript install_deps.R
 
-# Launch app
+# Launch app directly:
 Rscript app/run_app.R
 ```
 
@@ -72,8 +75,8 @@ SciDataView/
 │   ├── app.R                          # Main application logic
 │   ├── export_shinylive.R             # Shinylive export script
 │   ├── run_app.R                      # Process manager and browser launcher
-│   ├── SciDataView.bat                # Windows launcher (with Rscript fallback)
-│   ├── SciDataView.vbs                # Silent background runner
+│   ├── SciDataView.bat                # Windows launcher (with smart auto-detection & setup)
+│   ├── setup_r.ps1                    # Automated R setup script for clean machines
 │   └── icon/                          # Application icons
 ├── install_deps.R                     # Dependency installation script
 ├── LICENSE                            # MIT License

@@ -36,6 +36,22 @@ suppressPackageStartupMessages({
 # Set max upload size to 1 GB
 options(shiny.maxRequestSize = 2000 * 1024^2)
 
+# Serve icon assets statically from app/icon
+icon_dir <- if (dir.exists("app/icon")) "app/icon" else if (dir.exists("icon")) "icon" else "."
+try(shiny::addResourcePath("icon", normalizePath(icon_dir, mustWork = FALSE)), silent = TRUE)
+
+get_app_icon_svg <- function() {
+  candidates <- c("app/icon/app_icon.svg", "icon/app_icon.svg")
+  for (cand in candidates) {
+    if (file.exists(cand)) {
+      raw <- paste(readLines(cand, warn = FALSE), collapse = "\n")
+      raw <- sub('^<\\?xml[^>]*\\?>\\s*', '', raw)
+      return(raw)
+    }
+  }
+  ""
+}
+
 # ==============================================================================
 # 1. CORE UTILITIES & UNIVERSAL FILE READER
 # ==============================================================================
@@ -688,8 +704,8 @@ generate_text_report <- function(file_name, p, df = NULL) {
     add_l("================================================================================")
   }
   
-  add_box(sprintf("DATA PROFILE SUMMARY: %s", basename(file_name)))
-  add_l("Generated: %s | Tool: Data Profiler", format(Sys.time(), "%Y-%m-%d %H:%M:%S"))
+  add_box(sprintf("SCIDATAVIEW - DATA PROFILE SUMMARY: %s", basename(file_name)))
+  add_l("Generated: %s | Application: SciDataView", format(Sys.time(), "%Y-%m-%d %H:%M:%S"))
   add_l("")
   
   # SECTION 1: OVERVIEW METRICS
@@ -752,7 +768,7 @@ generate_text_report <- function(file_name, p, df = NULL) {
   }
   
   add_l("================================================================================")
-  add_l("END OF SUMMARY REPORT")
+  add_l("END OF SCIDATAVIEW SUMMARY REPORT")
   add_l("================================================================================")
   
   paste(lines, collapse = "\n")
@@ -884,13 +900,18 @@ generate_html_report <- function(file_name, p, df = NULL) {
   }
   
   # Assemble complete standalone HTML
+  app_logo_svg <- get_app_icon_svg()
+  if (nzchar(app_logo_svg)) {
+    app_logo_svg <- sub('<svg ', '<svg width="38" height="38" ', app_logo_svg)
+  }
+  
   sprintf(
 '<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Data Profile Report: %s</title>
+  <title>SciDataView Report: %s</title>
   <style>
     :root {
       --app-bg: #F5F5F7;
@@ -972,9 +993,14 @@ generate_html_report <- function(file_name, p, df = NULL) {
 <body>
   <div class="container">
     <div class="header">
-      <div>
-        <h1 style="font-size: 20px; margin: 0 0 4px; font-weight: 600;">Data Profile Report</h1>
-        <div style="font-size: 13px; color: var(--app-text-secondary);">Source File: <strong>%s</strong> | Generated: %s%s</div>
+      <div style="display: flex; align-items: center; gap: 14px;">
+        <div style="width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.22));">
+          %s
+        </div>
+        <div>
+          <h1 style="font-size: 20px; margin: 0 0 4px; font-weight: 600;">SciDataView Report</h1>
+          <div style="font-size: 13px; color: var(--app-text-secondary);">Source File: <strong>%s</strong> | Generated: %s%s</div>
+        </div>
       </div>
     </div>
 
@@ -1060,12 +1086,12 @@ generate_html_report <- function(file_name, p, df = NULL) {
     </div>
 
     <div class="footer">
-      Data Profile Report | Generated: %s | Standalone HTML
+      SciDataView Report | Generated: %s | Standalone Offline HTML
     </div>
   </div>
 </body>
 </html>',
-    basename(file_name), basename(file_name), format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
+    basename(file_name), app_logo_svg, basename(file_name), format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
     if (isTRUE(p$skip_rows > 0)) sprintf(" | Skipped %d title row(s)", p$skip_rows) else "",
     format(p$rows, big.mark = ","), format(p$cols, big.mark = ","), p$memory, p$missing_rate, format(p$duplicates, big.mark = ","),
     hygiene_html, inv_rows, num_rows, cat_rows, cor_html,
@@ -1173,15 +1199,17 @@ body {
 .app-logo-badge {
   width: 32px;
   height: 32px;
-  background: linear-gradient(135deg, #0071E3, #30B0C7);
-  border-radius: 9px;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: white;
-  font-weight: 700;
-  font-size: 15px;
-  box-shadow: 0 2px 8px rgba(0, 113, 227, 0.25);
+  flex-shrink: 0;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.22));
+}
+
+.app-logo-badge img, .app-logo-badge svg {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 .app-title-main { font-size: 18px; font-weight: 600; letter-spacing: -0.02em; color: var(--app-text); margin: 0; }
@@ -1241,6 +1269,72 @@ body {
 .btn-app-secondary:hover {
   background: var(--app-border-strong) !important;
 }
+
+.btn-clear-dataset {
+  background: var(--app-btn-secondary-bg) !important;
+  color: var(--app-btn-secondary-text) !important;
+  border: 1px solid var(--app-border) !important;
+  border-radius: var(--app-radius-pill) !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  padding: 8px 18px !important;
+  transition: all 0.2s ease !important;
+  width: 100% !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+}
+
+.btn-clear-dataset:hover {
+  background: rgba(255, 59, 48, 0.08) !important;
+  color: #FF3B30 !important;
+  border-color: rgba(255, 59, 48, 0.35) !important;
+}
+
+.col-sidebar-ingestion {
+  align-self: flex-start !important;
+  position: sticky !important;
+  top: 84px !important;
+  z-index: 100;
+}
+
+.app-card-ingestion {
+  display: flex !important;
+  flex-direction: column !important;
+  margin-bottom: 24px !important;
+  transition: min-height 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+}
+
+.app-card-ingestion .app-dropzone {
+  flex: none !important;
+  height: auto !important;
+}
+
+.app-file-meta-wrap {
+  padding-top: 14px;
+  border-top: 1px solid var(--app-border);
+  font-size: 12px;
+  color: #86868B;
+}
+
+body:not(.has-dataset) .app-card-ingestion {
+  min-height: 520px;
+}
+
+body:not(.has-dataset) .app-file-meta-wrap {
+  margin-top: auto !important;
+}
+
+body.has-dataset .app-card-ingestion {
+  min-height: unset !important;
+  height: auto !important;
+}
+
+body.has-dataset .app-file-meta-wrap {
+  margin-top: 16px !important;
+}
+
 
 .btn-theme-toggle {
   background: var(--app-card);
@@ -1445,6 +1539,216 @@ body {
 
 [data-theme='dark'] .type-override-toolbar select option {
   background-color: var(--app-card) !important;
+  color: var(--app-text) !important;
+}
+
+/* Excel Sheet Selector Toolbar (Styled to match Change Data Type) */
+.sheet-selector-card {
+  background: var(--app-subbox-bg);
+  border: 1px solid var(--app-border);
+  border-radius: 12px;
+  padding: 10px 14px;
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+.sheet-selector-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sheet-selector-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--app-text);
+  white-space: nowrap;
+}
+
+.sheet-selector-label svg {
+  color: #107C41;
+  flex-shrink: 0;
+}
+
+.sheet-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: rgba(16, 124, 65, 0.10);
+  color: #107C41;
+  letter-spacing: 0.02em;
+}
+
+[data-theme='dark'] .sheet-badge {
+  background: rgba(52, 199, 89, 0.16);
+  color: #34C759;
+}
+
+[data-theme='dark'] .sheet-selector-label svg {
+  color: #34C759;
+}
+
+.sheet-selector-select-wrap {
+  width: 100%;
+}
+
+.sheet-selector-card .shiny-input-container {
+  margin-bottom: 0 !important;
+  padding: 0 !important;
+  width: 100% !important;
+}
+
+.sheet-selector-card select.shiny-input-select,
+.sheet-selector-card select.form-control,
+.sheet-selector-card select {
+  height: 36px !important;
+  min-height: 36px !important;
+  padding: 6px 34px 6px 12px !important;
+  border-radius: 8px !important;
+  border: 1px solid var(--app-border-strong) !important;
+  background-color: var(--app-card) !important;
+  color: var(--app-text) !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  line-height: 22px !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
+  background-image: url(\"data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%2386868B' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e\") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 10px center !important;
+  background-size: 12px 10px !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+  width: 100% !important;
+}
+
+.sheet-selector-card select:hover {
+  border-color: var(--app-blue) !important;
+}
+
+.sheet-selector-card select:focus {
+  border-color: var(--app-blue) !important;
+  box-shadow: 0 0 0 3px var(--app-blue-soft) !important;
+  outline: none !important;
+}
+
+[data-theme='dark'] .sheet-selector-card select {
+  background-color: var(--app-input-bg) !important;
+  border-color: var(--app-border-strong) !important;
+  color: var(--app-text) !important;
+  background-image: url(\"data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%2398989D' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e\") !important;
+}
+
+[data-theme='dark'] .sheet-selector-card select option {
+  background-color: var(--app-card) !important;
+  color: var(--app-text) !important;
+}
+
+/* Skip Title Rows Card (Styled to match Change Data Type & Excel Sheet) */
+.skip-rows-card {
+  background: var(--app-subbox-bg);
+  border: 1px solid var(--app-border);
+  border-radius: 12px;
+  padding: 10px 14px;
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+.skip-rows-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.skip-rows-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--app-text);
+  white-space: nowrap;
+}
+
+.skip-rows-label svg {
+  color: var(--app-blue);
+  flex-shrink: 0;
+}
+
+.skip-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: rgba(134, 134, 139, 0.12);
+  color: #86868B;
+  letter-spacing: 0.02em;
+}
+
+.skip-badge.active {
+  background: rgba(0, 113, 227, 0.10);
+  color: #0071E3;
+}
+
+[data-theme='dark'] .skip-badge.active {
+  background: rgba(10, 132, 255, 0.18);
+  color: #0A84FF;
+}
+
+.skip-rows-input-wrap {
+  width: 100%;
+}
+
+.skip-rows-card .shiny-input-container {
+  margin-bottom: 0 !important;
+  padding: 0 !important;
+  width: 100% !important;
+}
+
+.skip-rows-card input.form-control,
+.skip-rows-card input[type='number'] {
+  height: 36px !important;
+  min-height: 36px !important;
+  padding: 6px 12px !important;
+  border-radius: 8px !important;
+  border: 1px solid var(--app-border-strong) !important;
+  background-color: var(--app-card) !important;
+  color: var(--app-text) !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  line-height: 22px !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
+  transition: all 0.15s ease !important;
+  width: 100% !important;
+}
+
+.skip-rows-card input[type='number']:hover {
+  border-color: var(--app-blue) !important;
+}
+
+.skip-rows-card input[type='number']:focus {
+  border-color: var(--app-blue) !important;
+  box-shadow: 0 0 0 3px var(--app-blue-soft) !important;
+  outline: none !important;
+}
+
+[data-theme='dark'] .skip-rows-card input[type='number'] {
+  background-color: var(--app-input-bg) !important;
+  border-color: var(--app-border-strong) !important;
   color: var(--app-text) !important;
 }
 
@@ -1680,13 +1984,70 @@ ui <- fluidPage(
           localStorage.setItem('scidataview_theme', next);
           applyTheme(next);
         };
+        function syncIngestionHeight() {
+          var ingestionCard = document.querySelector('.app-card-ingestion');
+          if (!ingestionCard) return;
+          if (document.body.classList.contains('has-dataset')) {
+            ingestionCard.style.minHeight = '';
+            return;
+          }
+          var tabsCard = document.querySelector('.app-content-wrap .col-sm-9 .app-card');
+          if (tabsCard) {
+            var tabsBottom = tabsCard.getBoundingClientRect().bottom;
+            var ingTop = ingestionCard.getBoundingClientRect().top;
+            var matchedHeight = Math.round(tabsBottom - ingTop);
+            if (matchedHeight > 300) {
+              ingestionCard.style.minHeight = matchedHeight + 'px';
+            }
+          }
+        }
+        window.syncIngestionHeight = syncIngestionHeight;
+        window.addEventListener('resize', syncIngestionHeight);
+
         applyTheme(getTheme());
         document.addEventListener('DOMContentLoaded', function() {
           applyTheme(getTheme());
+          setTimeout(syncIngestionHeight, 50);
         });
+        if (window.jQuery) {
+          window.jQuery(document).on('shown.bs.tab', 'a[data-toggle=\"tab\"], button[data-bs-toggle=\"tab\"]', function() {
+            setTimeout(syncIngestionHeight, 50);
+          });
+        }
+
+        function registerShinyHandlers() {
+          if (window.Shiny && window.Shiny.addCustomMessageHandler) {
+            Shiny.addCustomMessageHandler('clearFileInput', function(id) {
+              var el = document.getElementById(id);
+              if (el) {
+                el.value = '';
+                var wrap = el.closest ? el.closest('.app-file-dropzone, .shiny-input-container') : el.parentElement;
+                if (wrap) {
+                  var txt = wrap.querySelector('input[type=\"text\"]');
+                  if (txt) txt.value = '';
+                  var bar = wrap.querySelector('.progress');
+                  if (bar) bar.style.display = 'none';
+                }
+              }
+            });
+            Shiny.addCustomMessageHandler('setDatasetState', function(hasData) {
+              if (hasData) {
+                document.body.classList.add('has-dataset');
+              } else {
+                document.body.classList.remove('has-dataset');
+              }
+              setTimeout(syncIngestionHeight, 50);
+            });
+          } else {
+            setTimeout(registerShinyHandlers, 100);
+          }
+        }
+        registerShinyHandlers();
       })();
     ")),
-    tags$link(rel = "icon", type = "image/x-icon", href = "app.ico")
+    tags$link(rel = "icon", type = "image/x-icon", href = "icon/app.ico"),
+    tags$link(rel = "icon", type = "image/svg+xml", href = "icon/app_icon.svg"),
+    tags$link(rel = "apple-touch-icon", href = "icon/app_icon.png")
   ),
   
   # Top Navigation Bar (Frosted Glass)
@@ -1696,7 +2057,7 @@ ui <- fluidPage(
       class = "app-brand",
       div(
         class = "app-logo-badge",
-        HTML('<svg width="22" height="22" viewBox="0 0 512 512" fill="none"><rect x="96" y="270" width="56" height="120" rx="14" fill="#FFFFFF" opacity="0.9"/><rect x="180" y="190" width="56" height="200" rx="14" fill="#FFFFFF"/><rect x="264" y="240" width="56" height="150" rx="14" fill="#FFFFFF" opacity="0.9"/><rect x="348" y="140" width="56" height="250" rx="14" fill="#FFFFFF"/><path d="M 124 250 C 160 180, 175 165, 208 170 C 245 175, 260 230, 292 215 C 325 200, 345 125, 376 115" fill="none" stroke="#FFD60A" stroke-width="26" stroke-linecap="round"/><circle cx="376" cy="115" r="24" fill="#FFFFFF" stroke="#FF9500" stroke-width="8"/></svg>')
+        tags$img(src = "icon/app_icon.svg", width = "32", height = "32", alt = "SciDataView Icon")
       ),
       div(
         h1(class = "app-title-main", "SciDataView")
@@ -1730,8 +2091,9 @@ ui <- fluidPage(
     fluidRow(
       column(
         width = 3,
+        class = "col-sidebar-ingestion",
         div(
-          class = "app-card mb-4",
+          class = "app-card app-card-ingestion",
           h4("Dataset Ingestion", style = "font-size: 15px; font-weight: 600; margin-bottom: 14px;"),
           
           # Custom drop-zone
@@ -1758,15 +2120,22 @@ ui <- fluidPage(
           
           div(style = "margin-top: 18px;"),
           actionButton(
-            inputId = "btn_run",
-            label   = "Refresh",
-            icon    = icon("arrows-rotate"),
-            class   = "btn-app-primary",
-            style   = "width: 100%;"
+            inputId = "btn_clear",
+            label   = "Clear Dataset",
+            icon    = tags$svg(
+              width = "14", height = "14", viewBox = "0 0 24 24", fill = "none",
+              stroke = "currentColor", strokeWidth = "2", strokeLinecap = "round", strokeLinejoin = "round",
+              tags$polyline(points = "3 6 5 6 21 6"),
+              tags$path(d = "M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"),
+              tags$line(x1 = "10", y1 = "11", x2 = "10", y2 = "17"),
+              tags$line(x1 = "14", y1 = "11", x2 = "14", y2 = "17")
+            ),
+            class   = "btn-clear-dataset",
+            title   = "Clear dataset from memory and free RAM/CPU"
           ),
           
           div(
-            style = "margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--app-border); font-size: 12px; color: #86868B;",
+            class = "app-file-meta-wrap",
             uiOutput("ui_file_meta")
           )
         )
@@ -1809,9 +2178,6 @@ ui <- fluidPage(
             div(class = "app-kpi-sub", "Exact identical rows")
           )
         ),
-        
-        # Data Quality & Hygiene Screening Alerts
-        uiOutput("ui_hygiene_banner"),
         
         # Segmented Control Tabs
         div(
@@ -1897,6 +2263,7 @@ server <- function(input, output, session) {
     profile           = NULL,
     file_name         = NULL,
     file_path         = NULL,
+    current_sheet     = NULL,
     skip_rows         = 0,
     report_txt        = NULL,
     report_html       = NULL,
@@ -1906,59 +2273,122 @@ server <- function(input, output, session) {
     inv_sort_dir      = "asc"
   )
   
-  # Dynamic Excel sheet selector
+  # Broadcast dataset state to client DOM for adaptive sidebar sizing
+  observe({
+    session$sendCustomMessage("setDatasetState", !is.null(rv$raw_df))
+  })
+  
+  # Dynamic Excel sheet selector (matching Change Data Type UI)
   output$ui_sheet_selector <- renderUI({
-    req(input$file_upload)
+    req(input$file_upload, rv$raw_df)
     ext <- tolower(tools::file_ext(input$file_upload$name))
     if (ext %in% c("xlsx", "xls")) {
       sheets <- readxl::excel_sheets(input$file_upload$datapath)
       if (length(sheets) > 1) {
-        selectInput(
-          inputId  = "excel_sheet",
-          label    = "Select Excel Sheet:",
-          choices  = sheets,
-          selected = sheets[1]
+        selected_val <- if (!is.null(rv$current_sheet) && rv$current_sheet %in% sheets) {
+          rv$current_sheet
+        } else if (!is.null(input$excel_sheet) && input$excel_sheet %in% sheets) {
+          input$excel_sheet
+        } else {
+          sheets[1]
+        }
+        
+        div(
+          class = "sheet-selector-card",
+          div(
+            class = "sheet-selector-header",
+            div(
+              class = "sheet-selector-label",
+              tags$svg(
+                width = "14", height = "14", viewBox = "0 0 24 24", fill = "none",
+                stroke = "currentColor", strokeWidth = "2", strokeLinecap = "round", strokeLinejoin = "round",
+                tags$path(d = "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"),
+                tags$polyline(points = "14 2 14 8 20 8"),
+                tags$line(x1 = "8", y1 = "13", x2 = "16", y2 = "13"),
+                tags$line(x1 = "8", y1 = "17", x2 = "16", y2 = "17")
+              ),
+              tags$span("Select Excel Sheet:")
+            ),
+            tags$span(
+              class = "sheet-badge",
+              sprintf("%d Sheets", length(sheets))
+            )
+          ),
+          div(
+            class = "sheet-selector-select-wrap",
+            selectInput(
+              inputId  = "excel_sheet",
+              label    = NULL,
+              choices  = sheets,
+              selected = selected_val,
+              selectize = FALSE,
+              width    = "100%"
+            )
+          )
         )
       }
     }
   })
   
-  # Dynamic title row skip selector (auto-detected, user can adjust)
+  # Dynamic title row skip selector (matching Change Data Type UI)
   output$ui_skip_selector <- renderUI({
-    req(input$file_upload)
+    req(input$file_upload, rv$raw_df)
     ext <- tolower(tools::file_ext(input$file_upload$name))
     if (ext %in% c("parquet", "feather", "arrow", "fst", "qs", "qs2", "rds", "dta", "sav", "sas7bdat")) {
       return(NULL)
     }
-    sheet_sel <- if (!is.null(input$excel_sheet)) input$excel_sheet else 1
+    sheet_sel <- if (!is.null(rv$current_sheet)) rv$current_sheet else 1
     detected  <- detect_title_skip(input$file_upload$datapath, ext = ext, sheet = sheet_sel)
     
+    current_val <- if (!is.null(rv$skip_rows)) rv$skip_rows else detected
+    
     div(
-      style = "margin-top: 10px;",
-      numericInput(
-        inputId = "num_skip_rows",
-        label   = tags$div(
-          style = "display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;",
-          tags$span(style = "font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--app-text-secondary); letter-spacing: 0.04em;", "Skip Title Rows:"),
-          tags$span(style = sprintf("font-size: 11px; font-weight: 500; color: %s;", if (detected > 0) "#0071E3" else "#86868B"),
-                    sprintf("Auto: %d", detected))
+      class = "skip-rows-card",
+      div(
+        class = "skip-rows-header",
+        div(
+          class = "skip-rows-label",
+          tags$svg(
+            width = "14", height = "14", viewBox = "0 0 24 24", fill = "none",
+            stroke = "currentColor", strokeWidth = "2", strokeLinecap = "round", strokeLinejoin = "round",
+            tags$path(d = "M4 6h16"),
+            tags$path(d = "M4 12h10"),
+            tags$path(d = "M4 18h14"),
+            tags$polyline(points = "15 9 18 12 15 15")
+          ),
+          tags$span("Skip Title Rows:")
         ),
-        value   = detected,
-        min     = 0,
-        max     = 100,
-        step    = 1,
-        width   = "100%"
+        tags$span(
+          class = if (detected > 0) "skip-badge active" else "skip-badge",
+          sprintf("Auto: %d", detected)
+        )
+      ),
+      div(
+        class = "skip-rows-input-wrap",
+        numericInput(
+          inputId = "num_skip_rows",
+          label   = NULL,
+          value   = current_val,
+          min     = 0,
+          max     = 100,
+          step    = 1,
+          width   = "100%"
+        )
       )
     )
   })
   
-  # Ingest and profile file upon upload or Profile button click
-  observeEvent(c(input$file_upload, input$btn_run), {
+  # Core helper to ingest and profile dataset
+  load_dataset <- function(sheet_sel = NULL, skip_sel = NULL) {
     req(input$file_upload)
-    
     file_info <- input$file_upload
-    sheet_sel <- if (!is.null(input$excel_sheet)) input$excel_sheet else 1
-    skip_sel  <- if (!is.null(input$num_skip_rows)) input$num_skip_rows else "auto"
+    
+    if (is.null(sheet_sel)) {
+      sheet_sel <- if (!is.null(rv$current_sheet)) rv$current_sheet else 1
+    }
+    if (is.null(skip_sel)) {
+      skip_sel <- if (!is.null(rv$skip_rows)) rv$skip_rows else "auto"
+    }
     
     withProgress(message = "Reading dataset...", detail = "Please wait", value = 0.3, {
       tryCatch({
@@ -1974,6 +2404,7 @@ server <- function(input, output, session) {
         rv$type_overrides    <- list()
         rv$file_name         <- file_info$name
         rv$file_path         <- file_info$datapath
+        rv$current_sheet     <- sheet_sel
         rv$profile           <- p
         rv$report_txt        <- NULL
         rv$report_html       <- NULL
@@ -1996,6 +2427,70 @@ server <- function(input, output, session) {
         )
       })
     })
+  }
+  
+  # Ingest and profile file upon initial upload
+  observeEvent(input$file_upload, {
+    req(input$file_upload)
+    ext <- tolower(tools::file_ext(input$file_upload$name))
+    first_sheet <- 1
+    if (ext %in% c("xlsx", "xls")) {
+      sheets <- tryCatch(readxl::excel_sheets(input$file_upload$datapath), error = function(e) NULL)
+      if (length(sheets) > 0) {
+        first_sheet <- sheets[1]
+      }
+    }
+    load_dataset(sheet_sel = first_sheet, skip_sel = "auto")
+  })
+  
+  # Automatically reload data when user switches Excel sheet
+  observeEvent(input$excel_sheet, {
+    req(input$file_upload, rv$raw_df, input$excel_sheet)
+    if (!is.null(rv$current_sheet) && identical(as.character(input$excel_sheet), as.character(rv$current_sheet))) {
+      return()
+    }
+    load_dataset(sheet_sel = input$excel_sheet, skip_sel = if (!is.null(rv$skip_rows)) rv$skip_rows else "auto")
+  }, ignoreInit = TRUE)
+  
+  # Automatically reload data when user changes skip rows (debounced)
+  skip_debounced <- debounce(reactive(input$num_skip_rows), 500)
+  observeEvent(skip_debounced(), {
+    req(input$file_upload, rv$raw_df)
+    val <- skip_debounced()
+    if (is.null(val) || is.na(val)) return()
+    if (!is.null(rv$skip_rows) && identical(as.integer(val), as.integer(rv$skip_rows))) {
+      return()
+    }
+    sheet_sel <- if (!is.null(rv$current_sheet)) rv$current_sheet else 1
+    load_dataset(sheet_sel = sheet_sel, skip_sel = val)
+  }, ignoreInit = TRUE)
+  
+  # Clear dataset from memory and force garbage collection
+  observeEvent(input$btn_clear, {
+    if (is.null(rv$raw_df) && is.null(rv$file_name)) {
+      showNotification("No dataset loaded in memory.", type = "message", duration = 3)
+      return()
+    }
+    
+    rv$raw_df            <- NULL
+    rv$original_df       <- NULL
+    rv$type_overrides    <- list()
+    rv$profile           <- NULL
+    rv$file_name         <- NULL
+    rv$file_path         <- NULL
+    rv$current_sheet     <- NULL
+    rv$skip_rows         <- 0
+    rv$report_txt        <- NULL
+    rv$report_html       <- NULL
+    rv$selected_cor_pair <- NULL
+    rv$inspect_page      <- 1
+    rv$inv_sort_col      <- "Index"
+    rv$inv_sort_dir      <- "asc"
+    
+    session$sendCustomMessage("clearFileInput", "file_upload")
+    gc()
+    
+    showNotification("Dataset cleared from memory. RAM released.", type = "message", duration = 3)
   })
   
   # Lazy Profile Evaluators (Computed on demand when switching to respective tabs)
@@ -2055,7 +2550,7 @@ server <- function(input, output, session) {
   
   output$btn_download_html <- downloadHandler(
     filename = function() {
-      paste0(tools::file_path_sans_ext(rv$file_name), "_data_profile.html")
+      paste0(tools::file_path_sans_ext(rv$file_name), "_scidataview.html")
     },
     content = function(file) {
       req(rv$raw_df, rv$profile)
@@ -2076,7 +2571,7 @@ server <- function(input, output, session) {
   
   output$btn_download_txt <- downloadHandler(
     filename = function() {
-      paste0(tools::file_path_sans_ext(rv$file_name), "_data_summary.txt")
+      paste0(tools::file_path_sans_ext(rv$file_name), "_scidataview.txt")
     },
     content = function(file) {
       req(rv$raw_df, rv$profile)
@@ -2091,25 +2586,6 @@ server <- function(input, output, session) {
   output$kpi_memory  <- renderText({ if (is.null(rv$profile)) "-" else rv$profile$memory })
   output$kpi_missing <- renderText({ if (is.null(rv$profile)) "-" else paste0(rv$profile$missing_rate, "%") })
   output$kpi_dups    <- renderText({ if (is.null(rv$profile)) "-" else format(rv$profile$duplicates, big.mark = ",") })
-  
-  # Data Quality & Hygiene Screening Alerts Banner
-  output$ui_hygiene_banner <- renderUI({
-    req(rv$profile)
-    flags <- rv$profile$hygiene_flags
-    
-    div(
-      class = "app-card mb-4",
-      div(style = "font-size: 14px; font-weight: 600; color: var(--app-text); margin-bottom: 12px; display: flex; align-items: center; gap: 8px;",
-          icon("shield-heart"), "Data Quality & Hygiene Screening"),
-      tagList(lapply(flags, function(f) {
-        div(
-          style = sprintf("display: flex; align-items: flex-start; gap: 12px; background: %s; border-radius: 12px; padding: 10px 14px; margin-bottom: 6px;", f$bg),
-          div(style = sprintf("font-size: 11px; font-weight: 700; color: %s; min-width: 140px; text-transform: uppercase; letter-spacing: 0.04em;", f$color), f$title),
-          div(style = "font-size: 13px; color: var(--app-text); line-height: 1.4;", f$desc)
-        )
-      }))
-    )
-  })
   
   # Type Override Toolbar (Tab 1)
   output$ui_type_override_bar <- renderUI({
@@ -2670,7 +3146,7 @@ if (!interactive()) {
     output_dir <- resolve_output_dir()
     
     cat("==============================================================================\n")
-    cat("UNIVERSAL DATASET PROFILER (CLI BATCH MODE - P1, P2 & P3)\n")
+    cat("SCIDATAVIEW - UNIVERSAL DATASET PROFILER (CLI BATCH MODE)\n")
     cat("==============================================================================\n")
     cat("Input File :", input_file, "\n")
     
@@ -2685,12 +3161,12 @@ if (!interactive()) {
     base_nm <- tools::file_path_sans_ext(basename(input_file))
     
     # 1. Output ASCII Text Report
-    txt_file <- file.path(output_dir, paste0(base_nm, "_data_summary.txt"))
+    txt_file <- file.path(output_dir, paste0(base_nm, "_scidataview.txt"))
     writeLines(generate_text_report(input_file, p), con = txt_file, useBytes = TRUE)
     cat(sprintf("Success! Text report written to: %s\n", txt_file))
     
     # 2. Output Standalone Offline HTML Report
-    html_file <- file.path(output_dir, paste0(base_nm, "_data_profile.html"))
+    html_file <- file.path(output_dir, paste0(base_nm, "_scidataview.html"))
     writeLines(generate_html_report(input_file, p), con = html_file, useBytes = TRUE)
     cat(sprintf("Success! HTML report written to: %s\n", html_file))
     
