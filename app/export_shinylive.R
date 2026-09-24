@@ -54,8 +54,26 @@ message("Packaging app with WebAssembly assets...")
 shinylive::export(
   appdir  = staging_dir,
   destdir = dest_dir,
+  template_params = list(
+    title = "SciDataView - Universal Scientific Data Profiler",
+    include_in_head = paste(
+      '<link rel="icon" type="image/x-icon" href="icon/app.ico">',
+      '<link rel="icon" type="image/png" sizes="192x192" href="icon/app_icon.png">',
+      '<link rel="icon" type="image/svg+xml" href="icon/app_icon.svg">',
+      sep = "\n"
+    )
+  ),
   quiet   = FALSE
 )
+
+# 4. Copy static icons directly to destination and create root favicon.ico
+if (dir.exists(file.path(app_dir, "icon"))) {
+  dir.create(file.path(dest_dir, "icon"), showWarnings = FALSE, recursive = TRUE)
+  file.copy(dir(file.path(app_dir, "icon"), full.names = TRUE), file.path(dest_dir, "icon"), overwrite = TRUE)
+  if (file.exists(file.path(app_dir, "icon", "app.ico"))) {
+    file.copy(file.path(app_dir, "icon", "app.ico"), file.path(dest_dir, "favicon.ico"), overwrite = TRUE)
+  }
+}
 
 # Clean up staging
 unlink(staging_dir, recursive = TRUE)

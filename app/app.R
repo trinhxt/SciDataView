@@ -1962,6 +1962,10 @@ ui <- fluidPage(
   title = "SciDataView - Universal Scientific Data Profiler",
   theme = bslib::bs_theme(version = 5),
   tags$head(
+    tags$title("SciDataView - Universal Scientific Data Profiler"),
+    tags$link(rel = "icon", type = "image/x-icon", href = "icon/app.ico"),
+    tags$link(rel = "icon", type = "image/png", sizes = "192x192", href = "icon/app_icon.png"),
+    tags$link(rel = "icon", type = "image/svg+xml", href = "icon/app_icon.svg"),
     tags$style(HTML(app_css)),
     tags$meta(name = "viewport", content = "width=device-width, initial-scale=1"),
     tags$script(HTML("
