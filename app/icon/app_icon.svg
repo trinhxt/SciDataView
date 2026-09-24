@@ -2,146 +2,220 @@
 <svg xmlns="http://www.w3.org/2000/svg"
      xmlns:xlink="http://www.w3.org/1999/xlink"
      xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
-     width="512" height="512" viewBox="0 0 512 512" version="1.1" id="scidataview-liquid-glass">
+     width="512" height="512" viewBox="0 0 512 512" version="1.1" id="app-icon">
   <defs>
-    <!-- Squircle Clip Path -->
+    <!-- Master Squircle Clip Path -->
     <clipPath id="squircleClip">
       <rect x="36" y="36" width="440" height="440" rx="98" ry="98" />
     </clipPath>
 
-    <!-- Opaque Frosted White-Gray Substrate (Nền trắng xám đục) -->
-    <linearGradient id="liquidBg" x1="0.1" y1="0.0" x2="0.9" y2="1.0">
-      <stop offset="0%" stop-color="#F8FAFC" />
-      <stop offset="30%" stop-color="#F1F5F9" />
-      <stop offset="70%" stop-color="#E2E8F0" />
-      <stop offset="100%" stop-color="#CBD5E1" />
-    </linearGradient>
-
-    <!-- Frosted Caustic Wave 1 -->
-    <linearGradient id="caustic1" x1="0.0" y1="0.0" x2="1.0" y2="1.0">
-      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.60" />
-      <stop offset="45%" stop-color="#E2E8F0" stop-opacity="0.25" />
-      <stop offset="100%" stop-color="#CBD5E1" stop-opacity="0.0" />
-    </linearGradient>
-
-    <!-- Frosted Caustic Wave 2 -->
-    <linearGradient id="caustic2" x1="1.0" y1="0.0" x2="0.0" y2="1.0">
-      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.50" />
-      <stop offset="50%" stop-color="#F1F5F9" stop-opacity="0.20" />
-      <stop offset="100%" stop-color="#94A3B8" stop-opacity="0.0" />
-    </linearGradient>
-
-    <!-- Beveled Frosted Rim Gradient -->
-    <linearGradient id="prismaticRim" x1="0.0" y1="0.0" x2="0.8" y2="1.0">
-      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.95" />
-      <stop offset="35%" stop-color="#E2E8F0" stop-opacity="0.75" />
-      <stop offset="70%" stop-color="#94A3B8" stop-opacity="0.50" />
-      <stop offset="100%" stop-color="#64748B" stop-opacity="0.40" />
-    </linearGradient>
-
-    <!-- Glossy Liquid Surface Glare -->
-    <linearGradient id="surfaceGlare" x1="0.2" y1="0.0" x2="0.5" y2="1.0">
-      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.70" />
-      <stop offset="35%" stop-color="#FFFFFF" stop-opacity="0.22" />
-      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.0" />
-    </linearGradient>
-
-    <!-- Tube Glass Sheen (Left vertical highlight) -->
-    <linearGradient id="glassStreak" x1="0.0" y1="0.0" x2="1.0" y2="0.0">
-      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.90" />
-      <stop offset="50%" stop-color="#FFFFFF" stop-opacity="0.35" />
-      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.0" />
-    </linearGradient>
-
-    <!-- Right Side Refraction Tint -->
-    <linearGradient id="glassRightRefract" x1="0.0" y1="0.0" x2="1.0" y2="0.0">
-      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.0" />
-      <stop offset="70%" stop-color="#FFFFFF" stop-opacity="0.15" />
-      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.55" />
-    </linearGradient>
-
-    <!-- Clip Paths for Liquid Cores (Ensuring full-height 50/50 highlights conform to liquid border) -->
-    <clipPath id="liquidClip1">
-      <path d="M 100 282 L 100 370 A 16 16 0 0 0 116 386 L 132 386 A 16 16 0 0 0 148 370 L 148 282 A 24 6 0 0 0 100 282 Z" />
-    </clipPath>
-    <clipPath id="liquidClip2">
-      <path d="M 184 202 L 184 370 A 16 16 0 0 0 200 386 L 216 386 A 16 16 0 0 0 232 370 L 232 202 A 24 6 0 0 0 184 202 Z" />
-    </clipPath>
-    <clipPath id="liquidClip3">
-      <path d="M 268 252 L 268 370 A 16 16 0 0 0 284 386 L 300 386 A 16 16 0 0 0 316 370 L 316 252 A 24 6 0 0 0 268 252 Z" />
-    </clipPath>
-    <clipPath id="liquidClip4">
-      <path d="M 352 152 L 352 370 A 16 16 0 0 0 368 386 L 384 386 A 16 16 0 0 0 400 370 L 400 152 A 24 6 0 0 0 352 152 Z" />
-    </clipPath>
-
-    <!-- Liquid Gradient Vial 1: Glowing Aqua/Cyan -->
-    <linearGradient id="liquidVial1" x1="0.5" y1="0.0" x2="0.5" y2="1.0">
-      <stop offset="0%" stop-color="#67E8F9" />
-      <stop offset="40%" stop-color="#06B6D4" />
-      <stop offset="100%" stop-color="#0284C7" />
-    </linearGradient>
-
-    <!-- Liquid Gradient Vial 2: Glowing Neon Violet/Orchid -->
-    <linearGradient id="liquidVial2" x1="0.5" y1="0.0" x2="0.5" y2="1.0">
-      <stop offset="0%" stop-color="#F472B6" />
-      <stop offset="35%" stop-color="#C084FC" />
-      <stop offset="100%" stop-color="#6366F1" />
-    </linearGradient>
-
-    <!-- Liquid Gradient Vial 3: Glowing Mint/Emerald -->
-    <linearGradient id="liquidVial3" x1="0.5" y1="0.0" x2="0.5" y2="1.0">
-      <stop offset="0%" stop-color="#6EE7B7" />
-      <stop offset="45%" stop-color="#10B981" />
-      <stop offset="100%" stop-color="#047857" />
-    </linearGradient>
-
-    <!-- Liquid Gradient Vial 4: Glowing Electric Royal Blue -->
-    <linearGradient id="liquidVial4" x1="0.5" y1="0.0" x2="0.5" y2="1.0">
-      <stop offset="0%" stop-color="#93C5FD" />
-      <stop offset="35%" stop-color="#3B82F6" />
-      <stop offset="100%" stop-color="#1D4ED8" />
-    </linearGradient>
-
-    <!-- Molten Liquid Gold Stream -->
-    <linearGradient id="moltenGold" x1="0.0" y1="0.5" x2="1.0" y2="0.5">
-      <stop offset="0%" stop-color="#FFCA28" />
-      <stop offset="25%" stop-color="#FFA000" />
-      <stop offset="65%" stop-color="#F57C00" />
-      <stop offset="100%" stop-color="#E64A19" />
-    </linearGradient>
-
-    <!-- Liquid Glass Bead Radial Highlight -->
-    <radialGradient id="glassBead" cx="35%" cy="30%" r="65%">
-      <stop offset="0%" stop-color="#FFFFFF" />
-      <stop offset="25%" stop-color="#FFF9C4" />
-      <stop offset="60%" stop-color="#FFB300" />
-      <stop offset="100%" stop-color="#E65100" />
-    </radialGradient>
-
-    <!-- Ambient 3D Drop Shadow for Opaque White-Gray Squircle -->
-    <filter id="liquidShadow" x="-20%" y="-20%" width="140%" height="145%">
-      <feGaussianBlur stdDeviation="16" in="SourceAlpha" result="blur" />
-      <feOffset dx="0" dy="14" result="offset" />
-      <feFlood flood-color="#0F172A" flood-opacity="0.22" result="shadowColor" />
-      <feComposite in="shadowColor" in2="offset" operator="in" result="shadow" />
+    <!-- Squircle Shadow Filter -->
+    <filter id="squircleShadow" x="-25%" y="-20%" width="150%" height="150%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="16" result="blur" />
+      <feOffset in="blur" dx="0" dy="14" result="offset" />
+      <feFlood flood-color="#0F172A" flood-opacity="0.22" result="color" />
+      <feComposite in="color" in2="offset" operator="in" result="shadow" />
       <feMerge>
         <feMergeNode in="shadow" />
         <feMergeNode in="SourceGraphic" />
       </feMerge>
     </filter>
 
-    <!-- Glow for Molten Stream -->
-    <filter id="moltenGlow" x="-30%" y="-30%" width="160%" height="160%">
-      <feGaussianBlur stdDeviation="5" in="SourceGraphic" result="blur" />
+    <!-- Apple Style Frosted White-Gray Substrate -->
+    <linearGradient id="appleFrostedBg" x1="0.1" y1="0.0" x2="0.9" y2="1.0">
+      <stop offset="0%" stop-color="#F8FAFC" />
+      <stop offset="30%" stop-color="#F1F5F9" />
+      <stop offset="65%" stop-color="#E2E8F0" />
+      <stop offset="100%" stop-color="#CBD5E1" />
+    </linearGradient>
+
+    <!-- Frosted Caustic Waves -->
+    <linearGradient id="caustic1" x1="0.0" y1="0.0" x2="1.0" y2="1.0">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.65" />
+      <stop offset="45%" stop-color="#E2E8F0" stop-opacity="0.25" />
+      <stop offset="100%" stop-color="#CBD5E1" stop-opacity="0.0" />
+    </linearGradient>
+
+    <linearGradient id="caustic2" x1="1.0" y1="0.0" x2="0.0" y2="1.0">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.55" />
+      <stop offset="50%" stop-color="#F1F5F9" stop-opacity="0.20" />
+      <stop offset="100%" stop-color="#94A3B8" stop-opacity="0.0" />
+    </linearGradient>
+
+    <!-- Specular Surface Glare -->
+    <linearGradient id="appleSurfaceGlare" x1="0.2" y1="0.0" x2="0.5" y2="1.0">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.75" />
+      <stop offset="35%" stop-color="#FFFFFF" stop-opacity="0.25" />
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.0" />
+    </linearGradient>
+
+    <!-- Beveled Frosted Rim Gradient -->
+    <linearGradient id="appleRimGrad" x1="0.0" y1="0.0" x2="0.8" y2="1.0">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.95" />
+      <stop offset="35%" stop-color="#E2E8F0" stop-opacity="0.75" />
+      <stop offset="70%" stop-color="#94A3B8" stop-opacity="0.50" />
+      <stop offset="100%" stop-color="#64748B" stop-opacity="0.40" />
+    </linearGradient>
+
+    <!-- Generic Data File Card Background (Clean White Computer Document) -->
+    <linearGradient id="genericFileBg" x1="0.0" y1="0.0" x2="1.0" y2="1.0">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="70%" stop-color="#FFFFFF" />
+      <stop offset="100%" stop-color="#F8FAFC" />
+    </linearGradient>
+
+    <!-- Dog-Ear Fold Flap Gradient -->
+    <linearGradient id="foldFlapGrad" x1="0.0" y1="0.0" x2="1.0" y2="1.0">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="50%" stop-color="#E2E8F0" />
+      <stop offset="100%" stop-color="#CBD5E1" />
+    </linearGradient>
+
+    <!-- File 3D Shadows -->
+    <filter id="fileShadowBottom" x="-20%" y="-20%" width="150%" height="150%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="12" result="blur" />
+      <feOffset in="blur" dx="-2" dy="14" result="offset" />
+      <feFlood flood-color="#0F172A" flood-opacity="0.26" result="color" />
+      <feComposite in="color" in2="offset" operator="in" result="shadow" />
       <feMerge>
-        <feMergeNode in="blur" />
+        <feMergeNode in="shadow" />
         <feMergeNode in="SourceGraphic" />
       </feMerge>
     </filter>
 
-    <!-- Subtle Internal Liquid Glow Filter -->
-    <filter id="liquidGlow" x="-20%" y="-15%" width="140%" height="130%">
-      <feGaussianBlur stdDeviation="3.5" in="SourceGraphic" result="blur" />
+    <filter id="fileShadowMiddle" x="-20%" y="-20%" width="150%" height="150%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="14" result="blur" />
+      <feOffset in="blur" dx="2" dy="16" result="offset" />
+      <feFlood flood-color="#0F172A" flood-opacity="0.28" result="color" />
+      <feComposite in="color" in2="offset" operator="in" result="shadow" />
+      <feMerge>
+        <feMergeNode in="shadow" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+
+    <filter id="fileShadowTop" x="-25%" y="-25%" width="150%" height="150%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="16" result="blur" />
+      <feOffset in="blur" dx="1" dy="18" result="offset" />
+      <feFlood flood-color="#0F172A" flood-opacity="0.32" result="color" />
+      <feComposite in="color" in2="offset" operator="in" result="shadow" />
+      <feMerge>
+        <feMergeNode in="shadow" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+
+    <!-- Lens Circular Clip Path -->
+    <clipPath id="lensGlassClip">
+      <circle cx="224" cy="202" r="138" />
+    </clipPath>
+
+    <!-- Lens Plot Frosted Background -->
+    <radialGradient id="lensPlotBg" cx="45%" cy="38%" r="65%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="65%" stop-color="#F8FAFC" />
+      <stop offset="88%" stop-color="#F0F9FF" />
+      <stop offset="100%" stop-color="#E0F2FE" />
+    </radialGradient>
+
+    <!-- Density Plot Area Fill Gradients -->
+    <linearGradient id="densityAreaCyan" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0284C7" stop-opacity="0.65" />
+      <stop offset="45%" stop-color="#38BDF8" stop-opacity="0.35" />
+      <stop offset="100%" stop-color="#E0F2FE" stop-opacity="0.05" />
+    </linearGradient>
+    <linearGradient id="densityAreaViolet" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#7C3AED" stop-opacity="0.55" />
+      <stop offset="50%" stop-color="#A78BFA" stop-opacity="0.25" />
+      <stop offset="100%" stop-color="#F3E8FF" stop-opacity="0.02" />
+    </linearGradient>
+    <linearGradient id="densityAreaEmerald" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#059669" stop-opacity="0.50" />
+      <stop offset="50%" stop-color="#34D399" stop-opacity="0.20" />
+      <stop offset="100%" stop-color="#ECFDF5" stop-opacity="0.02" />
+    </linearGradient>
+
+    <!-- Magnifying Glass Drop Shadow Filter -->
+    <filter id="glassCastShadow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="18" result="blur" />
+      <feOffset in="blur" dx="12" dy="20" result="offset" />
+      <feFlood flood-color="#0F172A" flood-opacity="0.35" result="color" />
+      <feComposite in="color" in2="offset" operator="in" result="shadow" />
+      <feMerge>
+        <feMergeNode in="shadow" />
+      </feMerge>
+    </filter>
+
+    <!-- Metallic Rim Gradients (Enlarged Bevel) -->
+    <linearGradient id="rimChromeOuter" x1="0.1" y1="0.1" x2="0.9" y2="0.9">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="12%" stop-color="#F8FAFC" />
+      <stop offset="30%" stop-color="#CBD5E1" />
+      <stop offset="48%" stop-color="#64748B" />
+      <stop offset="65%" stop-color="#334155" />
+      <stop offset="78%" stop-color="#94A3B8" />
+      <stop offset="88%" stop-color="#FFFFFF" />
+      <stop offset="100%" stop-color="#475569" />
+    </linearGradient>
+
+    <linearGradient id="rimChromeInner" x1="0.85" y1="0.85" x2="0.15" y2="0.15">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.95" />
+      <stop offset="40%" stop-color="#94A3B8" stop-opacity="0.65" />
+      <stop offset="80%" stop-color="#1E293B" stop-opacity="0.80" />
+      <stop offset="100%" stop-color="#0F172A" stop-opacity="0.95" />
+    </linearGradient>
+
+    <!-- Chromatic Aberration Vignette -->
+    <linearGradient id="lensChromatic" x1="0.0" y1="0.0" x2="1.0" y2="1.0">
+      <stop offset="0%" stop-color="#38BDF8" stop-opacity="0.30" />
+      <stop offset="40%" stop-color="#818CF8" stop-opacity="0.10" />
+      <stop offset="75%" stop-color="#EC4899" stop-opacity="0.25" />
+      <stop offset="100%" stop-color="#F59E0B" stop-opacity="0.30" />
+    </linearGradient>
+
+    <!-- Glass Lens Specular Glare (Enlarged) -->
+    <linearGradient id="glassGlareSoft" x1="0.1" y1="0.1" x2="0.6" y2="0.7">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.45" />
+      <stop offset="35%" stop-color="#FFFFFF" stop-opacity="0.12" />
+      <stop offset="70%" stop-color="#FFFFFF" stop-opacity="0.0" />
+    </linearGradient>
+
+    <linearGradient id="lensGlareSharp" x1="0.0" y1="0.0" x2="0.5" y2="0.6">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.85" />
+      <stop offset="25%" stop-color="#FFFFFF" stop-opacity="0.30" />
+      <stop offset="60%" stop-color="#FFFFFF" stop-opacity="0.0" />
+    </linearGradient>
+
+    <linearGradient id="lensGlareSecondary" x1="1.0" y1="1.0" x2="0.4" y2="0.3">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.40" />
+      <stop offset="35%" stop-color="#FFFFFF" stop-opacity="0.10" />
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.0" />
+    </linearGradient>
+
+    <!-- Handle Collar & Body -->
+    <linearGradient id="neckGrad" x1="0.0" y1="0.0" x2="1.0" y2="1.0">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="30%" stop-color="#CBD5E1" />
+      <stop offset="70%" stop-color="#64748B" />
+      <stop offset="100%" stop-color="#334155" />
+    </linearGradient>
+
+    <linearGradient id="handleBodyGrad" x1="0.0" y1="0.0" x2="0.0" y2="1.0">
+      <stop offset="0%" stop-color="#334155" />
+      <stop offset="20%" stop-color="#1E293B" />
+      <stop offset="60%" stop-color="#0F172A" />
+      <stop offset="100%" stop-color="#020617" />
+    </linearGradient>
+
+    <linearGradient id="handleHighlightGrad" x1="0.0" y1="0.0" x2="1.0" y2="0.0">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.75" />
+      <stop offset="60%" stop-color="#94A3B8" stop-opacity="0.35" />
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.0" />
+    </linearGradient>
+
+    <!-- Flare Star Glow Filter -->
+    <filter id="glintGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="3.0" result="blur" />
       <feMerge>
         <feMergeNode in="blur" />
         <feMergeNode in="SourceGraphic" />
@@ -149,16 +223,15 @@
     </filter>
   </defs>
 
-  <!-- LAYER 1: OPAQUE WHITE-GRAY SQUIRCLE WITH FROSTED WAVES -->
-  <g id="layer-squircle" inkscape:label="Liquid Glass Base" inkscape:groupmode="layer">
-    <!-- Base Squircle -->
+  <!-- LAYER 1: APPLE STYLE FROSTED WHITE-GRAY SQUIRCLE -->
+  <g id="layer-squircle">
     <rect x="36" y="36" width="440" height="440" rx="98" ry="98"
-          fill="url(#liquidBg)"
-          filter="url(#liquidShadow)" />
+          fill="#0F172A" filter="url(#squircleShadow)" />
 
-    <!-- Perfectly Clipped Interior Waves & Glare -->
     <g clip-path="url(#squircleClip)">
-      <!-- Frostic Caustic Wave 1 -->
+      <rect x="36" y="36" width="440" height="440" fill="url(#appleFrostedBg)" />
+
+      <!-- Frosted Caustic Wave 1 -->
       <path d="M 30 250 C 140 200, 220 370, 360 260 C 420 210, 460 240, 480 270 L 480 480 L 30 480 Z"
             fill="url(#caustic1)" />
 
@@ -166,194 +239,381 @@
       <path d="M 30 130 C 120 210, 260 120, 380 190 C 440 220, 465 180, 480 170 L 480 30 L 30 30 Z"
             fill="url(#caustic2)" />
 
-      <!-- Smooth Molten Glass Surface Curvature / Specular Glare -->
+      <!-- Specular Curvature Glare -->
       <path d="M 36 134 C 36 79.8 79.8 36 134 36 L 378 36 C 432.2 36 476 79.8 476 134 L 476 220 C 350 265, 170 200, 36 275 Z"
-            fill="url(#surfaceGlare)" />
+            fill="url(#appleSurfaceGlare)" />
+
+      <!-- Precision Reference Dots -->
+      <g opacity="0.18" fill="#64748B">
+        <circle cx="80" cy="80" r="1.5" /><circle cx="120" cy="80" r="1.5" /><circle cx="160" cy="80" r="1.5" /><circle cx="200" cy="80" r="1.5" /><circle cx="240" cy="80" r="1.5" /><circle cx="280" cy="80" r="1.5" /><circle cx="320" cy="80" r="1.5" /><circle cx="360" cy="80" r="1.5" /><circle cx="400" cy="80" r="1.5" /><circle cx="440" cy="80" r="1.5" />
+        <circle cx="80" cy="440" r="1.5" /><circle cx="120" cy="440" r="1.5" /><circle cx="160" cy="440" r="1.5" /><circle cx="200" cy="440" r="1.5" /><circle cx="240" cy="440" r="1.5" /><circle cx="280" cy="440" r="1.5" /><circle cx="320" cy="440" r="1.5" /><circle cx="360" cy="440" r="1.5" /><circle cx="400" cy="440" r="1.5" /><circle cx="440" cy="440" r="1.5" />
+      </g>
     </g>
 
-    <!-- Beveled Frosted Rim -->
-    <rect x="37" y="37" width="438" height="438" rx="97" ry="97"
-          fill="none" stroke="url(#prismaticRim)" stroke-width="2.0" />
+    <!-- Beveled Frosted Prismatic Rim -->
+    <rect x="36.5" y="36.5" width="439" height="439" rx="97.5" ry="97.5"
+          fill="none" stroke="url(#appleRimGrad)" stroke-width="1.8" />
   </g>
 
-  <!-- LAYER 2: SCIENTIFIC GRID MATRIX -->
-  <g id="layer-grid" inkscape:label="Grid Matrix" inkscape:groupmode="layer" opacity="0.22">
-    <line x1="80" y1="180" x2="432" y2="180" stroke="#475569" stroke-width="1.5" stroke-dasharray="3,5" />
-    <line x1="80" y1="250" x2="432" y2="250" stroke="#475569" stroke-width="1.5" stroke-dasharray="3,5" />
-    <line x1="80" y1="320" x2="432" y2="320" stroke="#475569" stroke-width="1.5" stroke-dasharray="3,5" />
-    <line x1="80" y1="390" x2="432" y2="390" stroke="#475569" stroke-width="2.0" />
+  <!-- LAYER 2: 3D STACK OF UNKNOWN COMPUTER DATA FILES (CHỒNG DATA FILES CHƯA RÕ ĐỊNH DẠNG) -->
+  <g id="layer-files-stack">
+    <!-- FILE 1: BOTTOM FILE (Tilted -16 degrees to the left, dog-ear fold visible) -->
+    <g transform="translate(68, 92) rotate(-16, 125, 142)" filter="url(#fileShadowBottom)">
+<path d="
+        M 0 12
+        A 12 12 0 0 1 12 0
+        L 204 0
+        L 250 46
+        L 250 273
+        A 12 12 0 0 1 238 285
+        L 12 285
+        A 12 12 0 0 1 0 273
+        Z
+        " fill="url(#genericFileBg)" stroke="#94A3B8" stroke-width="1.4" />
 
-    <circle cx="80" cy="180" r="2.5" fill="#475569" />
-    <circle cx="80" cy="250" r="2.5" fill="#475569" />
-    <circle cx="80" cy="320" r="2.5" fill="#475569" />
-    <circle cx="80" cy="390" r="2.5" fill="#475569" />
+        <!-- Dog-ear fold shadow -->
+        <path d="M 204 46 L 196 54 L 250 46 Z"
+              fill="#0F172A" opacity="0.22" />
+        <!-- Dog-ear fold flap -->
+        <path d="
+        M 204 0
+        L 204 40
+        A 6 6 0 0 0 210 46
+        L 250 46
+        Z
+        " fill="url(#foldFlapGrad)" stroke="#94A3B8" stroke-width="1.2" />
+        
+
+        <!-- Generic Data File Format Badge -->
+        <g transform="translate(20, 20)">
+          <rect x="0" y="0" width="54" height="20" rx="5" fill="#F1F5F9" stroke="#CBD5E1" stroke-width="1.2" />
+          <text x="27" y="14" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, monospace" font-size="10" font-weight="800" fill="#059669" text-anchor="middle">.RAW</text>
+        </g>
+        
+        <!-- Generic Binary / Unknown File Glyph -->
+        <g transform="translate(84, 23)" opacity="0.5" stroke="#475569" stroke-width="1.4" fill="none">
+          <rect x="0" y="0" width="16" height="14" rx="2.5" />
+          <line x1="0" y1="5" x2="16" y2="5" />
+          <line x1="5" y1="5" x2="5" y2="14" />
+          <line x1="11" y1="5" x2="11" y2="14" />
+        </g>
+        
+<line x1="20" y1="52" x2="230" y2="52" stroke="#E2E8F0" stroke-width="1.4" />
+<rect x="20" y="68" width="65" height="8" rx="4" fill="#64748B" opacity="0.65" />
+<rect x="95" y="68" width="45" height="8" rx="4" fill="#94A3B8" opacity="0.5" />
+<rect x="150" y="68" width="60" height="8" rx="4" fill="#CBD5E1" opacity="0.45" />
+<rect x="20" y="86" width="38" height="8" rx="4" fill="#94A3B8" opacity="0.55" />
+<rect x="68" y="86" width="75" height="8" rx="4" fill="#64748B" opacity="0.55" />
+<rect x="153" y="86" width="55" height="8" rx="4" fill="#CBD5E1" opacity="0.45" />
+<rect x="20" y="104" width="80" height="8" rx="4" fill="#64748B" opacity="0.65" />
+<rect x="110" y="104" width="40" height="8" rx="4" fill="#CBD5E1" opacity="0.5" />
+<rect x="160" y="104" width="50" height="8" rx="4" fill="#94A3B8" opacity="0.55" />
+<rect x="20" y="122" width="50" height="8" rx="4" fill="#CBD5E1" opacity="0.55" />
+<rect x="80" y="122" width="60" height="8" rx="4" fill="#64748B" opacity="0.55" />
+<rect x="150" y="122" width="65" height="8" rx="4" fill="#CBD5E1" opacity="0.45" />
+<rect x="20" y="140" width="70" height="8" rx="4" fill="#64748B" opacity="0.55" />
+<rect x="100" y="140" width="85" height="8" rx="4" fill="#CBD5E1" opacity="0.45" />
+<rect x="20" y="158" width="42" height="8" rx="4" fill="#CBD5E1" opacity="0.55" />
+<rect x="72" y="158" width="48" height="8" rx="4" fill="#64748B" opacity="0.55" />
+<rect x="130" y="158" width="55" height="8" rx="4" fill="#CBD5E1" opacity="0.45" />
+<rect x="195" y="158" width="30" height="8" rx="4" fill="#94A3B8" opacity="0.45" />
+<rect x="20" y="176" width="58" height="8" rx="4" fill="#64748B" opacity="0.55" />
+<rect x="88" y="176" width="70" height="8" rx="4" fill="#CBD5E1" opacity="0.45" />
+<rect x="168" y="176" width="42" height="8" rx="4" fill="#94A3B8" opacity="0.45" />
+<rect x="20" y="194" width="48" height="8" rx="4" fill="#CBD5E1" opacity="0.55" />
+<rect x="78" y="194" width="52" height="8" rx="4" fill="#64748B" opacity="0.55" />
+<rect x="140" y="194" width="70" height="8" rx="4" fill="#CBD5E1" opacity="0.45" />
+<rect x="20" y="212" width="75" height="8" rx="4" fill="#64748B" opacity="0.55" />
+<rect x="105" y="212" width="42" height="8" rx="4" fill="#CBD5E1" opacity="0.45" />
+<rect x="157" y="212" width="52" height="8" rx="4" fill="#94A3B8" opacity="0.45" />
+<rect x="20" y="230" width="52" height="8" rx="4" fill="#CBD5E1" opacity="0.55" />
+<rect x="82" y="230" width="65" height="8" rx="4" fill="#64748B" opacity="0.55" />
+<rect x="157" y="230" width="48" height="8" rx="4" fill="#CBD5E1" opacity="0.45" />
+<rect x="20" y="248" width="65" height="8" rx="4" fill="#64748B" opacity="0.55" />
+<rect x="95" y="248" width="48" height="8" rx="4" fill="#CBD5E1" opacity="0.45" />
+<rect x="153" y="248" width="60" height="8" rx="4" fill="#94A3B8" opacity="0.45" />
+<rect x="20" y="266" width="42" height="8" rx="4" fill="#CBD5E1" opacity="0.55" />
+<rect x="72" y="266" width="80" height="8" rx="4" fill="#64748B" opacity="0.45" />
+<rect x="162" y="266" width="42" height="8" rx="4" fill="#CBD5E1" opacity="0.45" />
+    </g>
+
+    <!-- FILE 2: MIDDLE FILE (Tilted +14 degrees to the right, dog-ear fold visible on top-right) -->
+    <g transform="translate(152, 82) rotate(14, 125, 142)" filter="url(#fileShadowMiddle)">
+<path d="
+        M 0 12
+        A 12 12 0 0 1 12 0
+        L 204 0
+        L 250 46
+        L 250 273
+        A 12 12 0 0 1 238 285
+        L 12 285
+        A 12 12 0 0 1 0 273
+        Z
+        " fill="url(#genericFileBg)" stroke="#94A3B8" stroke-width="1.4" />
+
+        <!-- Dog-ear fold shadow -->
+        <path d="M 204 46 L 196 54 L 250 46 Z"
+              fill="#0F172A" opacity="0.22" />
+        <!-- Dog-ear fold flap -->
+        <path d="
+        M 204 0
+        L 204 40
+        A 6 6 0 0 0 210 46
+        L 250 46
+        Z
+        " fill="url(#foldFlapGrad)" stroke="#94A3B8" stroke-width="1.2" />
+        
+
+        <!-- Generic Data File Format Badge -->
+        <g transform="translate(20, 20)">
+          <rect x="0" y="0" width="54" height="20" rx="5" fill="#F1F5F9" stroke="#CBD5E1" stroke-width="1.2" />
+          <text x="27" y="14" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, monospace" font-size="10" font-weight="800" fill="#7C3AED" text-anchor="middle">.BIN</text>
+        </g>
+        
+        <!-- Generic Binary / Unknown File Glyph -->
+        <g transform="translate(84, 23)" opacity="0.5" stroke="#475569" stroke-width="1.4" fill="none">
+          <rect x="0" y="0" width="16" height="14" rx="2.5" />
+          <line x1="0" y1="5" x2="16" y2="5" />
+          <line x1="5" y1="5" x2="5" y2="14" />
+          <line x1="11" y1="5" x2="11" y2="14" />
+        </g>
+        
+<line x1="20" y1="52" x2="230" y2="52" stroke="#E2E8F0" stroke-width="1.4" />
+<rect x="20" y="68" width="65" height="8" rx="4" fill="#64748B" opacity="0.65" />
+<rect x="95" y="68" width="45" height="8" rx="4" fill="#94A3B8" opacity="0.5" />
+<rect x="150" y="68" width="60" height="8" rx="4" fill="#CBD5E1" opacity="0.45" />
+<rect x="20" y="86" width="38" height="8" rx="4" fill="#94A3B8" opacity="0.55" />
+<rect x="68" y="86" width="75" height="8" rx="4" fill="#64748B" opacity="0.55" />
+<rect x="153" y="86" width="55" height="8" rx="4" fill="#CBD5E1" opacity="0.45" />
+<rect x="20" y="104" width="80" height="8" rx="4" fill="#64748B" opacity="0.65" />
+<rect x="110" y="104" width="40" height="8" rx="4" fill="#CBD5E1" opacity="0.5" />
+<rect x="160" y="104" width="50" height="8" rx="4" fill="#94A3B8" opacity="0.55" />
+<rect x="20" y="122" width="50" height="8" rx="4" fill="#CBD5E1" opacity="0.55" />
+<rect x="80" y="122" width="60" height="8" rx="4" fill="#64748B" opacity="0.55" />
+<rect x="150" y="122" width="65" height="8" rx="4" fill="#CBD5E1" opacity="0.45" />
+<rect x="20" y="140" width="70" height="8" rx="4" fill="#64748B" opacity="0.55" />
+<rect x="100" y="140" width="85" height="8" rx="4" fill="#CBD5E1" opacity="0.45" />
+<rect x="20" y="158" width="42" height="8" rx="4" fill="#CBD5E1" opacity="0.55" />
+<rect x="72" y="158" width="48" height="8" rx="4" fill="#64748B" opacity="0.55" />
+<rect x="130" y="158" width="55" height="8" rx="4" fill="#CBD5E1" opacity="0.45" />
+<rect x="195" y="158" width="30" height="8" rx="4" fill="#94A3B8" opacity="0.45" />
+<rect x="20" y="176" width="58" height="8" rx="4" fill="#64748B" opacity="0.55" />
+<rect x="88" y="176" width="70" height="8" rx="4" fill="#CBD5E1" opacity="0.45" />
+<rect x="168" y="176" width="42" height="8" rx="4" fill="#94A3B8" opacity="0.45" />
+<rect x="20" y="194" width="48" height="8" rx="4" fill="#CBD5E1" opacity="0.55" />
+<rect x="78" y="194" width="52" height="8" rx="4" fill="#64748B" opacity="0.55" />
+<rect x="140" y="194" width="70" height="8" rx="4" fill="#CBD5E1" opacity="0.45" />
+<rect x="20" y="212" width="75" height="8" rx="4" fill="#64748B" opacity="0.55" />
+<rect x="105" y="212" width="42" height="8" rx="4" fill="#CBD5E1" opacity="0.45" />
+<rect x="157" y="212" width="52" height="8" rx="4" fill="#94A3B8" opacity="0.45" />
+<rect x="20" y="230" width="52" height="8" rx="4" fill="#CBD5E1" opacity="0.55" />
+<rect x="82" y="230" width="65" height="8" rx="4" fill="#64748B" opacity="0.55" />
+<rect x="157" y="230" width="48" height="8" rx="4" fill="#CBD5E1" opacity="0.45" />
+<rect x="20" y="248" width="65" height="8" rx="4" fill="#64748B" opacity="0.55" />
+<rect x="95" y="248" width="48" height="8" rx="4" fill="#CBD5E1" opacity="0.45" />
+<rect x="153" y="248" width="60" height="8" rx="4" fill="#94A3B8" opacity="0.45" />
+<rect x="20" y="266" width="42" height="8" rx="4" fill="#CBD5E1" opacity="0.55" />
+<rect x="72" y="266" width="80" height="8" rx="4" fill="#64748B" opacity="0.45" />
+<rect x="162" y="266" width="42" height="8" rx="4" fill="#CBD5E1" opacity="0.45" />
+    </g>
+
+    <!-- FILE 3: TOP / HERO FILE (Nearly straight -2 degrees, prominent folded corner) -->
+    <g transform="translate(108, 68) rotate(-2, 125, 142)" filter="url(#fileShadowTop)">
+<path d="
+        M 0 12
+        A 12 12 0 0 1 12 0
+        L 204 0
+        L 250 46
+        L 250 273
+        A 12 12 0 0 1 238 285
+        L 12 285
+        A 12 12 0 0 1 0 273
+        Z
+        " fill="url(#genericFileBg)" stroke="#94A3B8" stroke-width="1.4" />
+
+        <!-- Dog-ear fold shadow -->
+        <path d="M 204 46 L 196 54 L 250 46 Z"
+              fill="#0F172A" opacity="0.22" />
+        <!-- Dog-ear fold flap -->
+        <path d="
+        M 204 0
+        L 204 40
+        A 6 6 0 0 0 210 46
+        L 250 46
+        Z
+        " fill="url(#foldFlapGrad)" stroke="#94A3B8" stroke-width="1.2" />
+        
+
+        <!-- Generic Data File Format Badge -->
+        <g transform="translate(20, 20)">
+          <rect x="0" y="0" width="54" height="20" rx="5" fill="#F1F5F9" stroke="#CBD5E1" stroke-width="1.2" />
+          <text x="27" y="14" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, monospace" font-size="10" font-weight="800" fill="#0284C7" text-anchor="middle">.DAT</text>
+        </g>
+        
+        <!-- Generic Binary / Unknown File Glyph -->
+        <g transform="translate(84, 23)" opacity="0.5" stroke="#475569" stroke-width="1.4" fill="none">
+          <rect x="0" y="0" width="16" height="14" rx="2.5" />
+          <line x1="0" y1="5" x2="16" y2="5" />
+          <line x1="5" y1="5" x2="5" y2="14" />
+          <line x1="11" y1="5" x2="11" y2="14" />
+        </g>
+        
+<line x1="20" y1="52" x2="230" y2="52" stroke="#E2E8F0" stroke-width="1.4" />
+<rect x="20" y="68" width="65" height="8" rx="4" fill="#64748B" opacity="0.65" />
+<rect x="95" y="68" width="45" height="8" rx="4" fill="#94A3B8" opacity="0.5" />
+<rect x="150" y="68" width="60" height="8" rx="4" fill="#CBD5E1" opacity="0.45" />
+<rect x="20" y="86" width="38" height="8" rx="4" fill="#94A3B8" opacity="0.55" />
+<rect x="68" y="86" width="75" height="8" rx="4" fill="#64748B" opacity="0.55" />
+<rect x="153" y="86" width="55" height="8" rx="4" fill="#CBD5E1" opacity="0.45" />
+<rect x="20" y="104" width="80" height="8" rx="4" fill="#64748B" opacity="0.65" />
+<rect x="110" y="104" width="40" height="8" rx="4" fill="#CBD5E1" opacity="0.5" />
+<rect x="160" y="104" width="50" height="8" rx="4" fill="#94A3B8" opacity="0.55" />
+<rect x="20" y="122" width="50" height="8" rx="4" fill="#CBD5E1" opacity="0.55" />
+<rect x="80" y="122" width="60" height="8" rx="4" fill="#64748B" opacity="0.55" />
+<rect x="150" y="122" width="65" height="8" rx="4" fill="#CBD5E1" opacity="0.45" />
+<rect x="20" y="140" width="70" height="8" rx="4" fill="#64748B" opacity="0.55" />
+<rect x="100" y="140" width="85" height="8" rx="4" fill="#CBD5E1" opacity="0.45" />
+<rect x="20" y="158" width="42" height="8" rx="4" fill="#CBD5E1" opacity="0.55" />
+<rect x="72" y="158" width="48" height="8" rx="4" fill="#64748B" opacity="0.55" />
+<rect x="130" y="158" width="55" height="8" rx="4" fill="#CBD5E1" opacity="0.45" />
+<rect x="195" y="158" width="30" height="8" rx="4" fill="#94A3B8" opacity="0.45" />
+<rect x="20" y="176" width="58" height="8" rx="4" fill="#64748B" opacity="0.55" />
+<rect x="88" y="176" width="70" height="8" rx="4" fill="#CBD5E1" opacity="0.45" />
+<rect x="168" y="176" width="42" height="8" rx="4" fill="#94A3B8" opacity="0.45" />
+<rect x="20" y="194" width="48" height="8" rx="4" fill="#CBD5E1" opacity="0.55" />
+<rect x="78" y="194" width="52" height="8" rx="4" fill="#64748B" opacity="0.55" />
+<rect x="140" y="194" width="70" height="8" rx="4" fill="#CBD5E1" opacity="0.45" />
+<rect x="20" y="212" width="75" height="8" rx="4" fill="#64748B" opacity="0.55" />
+<rect x="105" y="212" width="42" height="8" rx="4" fill="#CBD5E1" opacity="0.45" />
+<rect x="157" y="212" width="52" height="8" rx="4" fill="#94A3B8" opacity="0.45" />
+<rect x="20" y="230" width="52" height="8" rx="4" fill="#CBD5E1" opacity="0.55" />
+<rect x="82" y="230" width="65" height="8" rx="4" fill="#64748B" opacity="0.55" />
+<rect x="157" y="230" width="48" height="8" rx="4" fill="#CBD5E1" opacity="0.45" />
+<rect x="20" y="248" width="65" height="8" rx="4" fill="#64748B" opacity="0.55" />
+<rect x="95" y="248" width="48" height="8" rx="4" fill="#CBD5E1" opacity="0.45" />
+<rect x="153" y="248" width="60" height="8" rx="4" fill="#94A3B8" opacity="0.45" />
+<rect x="20" y="266" width="42" height="8" rx="4" fill="#CBD5E1" opacity="0.55" />
+<rect x="72" y="266" width="80" height="8" rx="4" fill="#64748B" opacity="0.45" />
+<rect x="162" y="266" width="42" height="8" rx="4" fill="#CBD5E1" opacity="0.45" />
+    </g>
   </g>
 
-  <!-- LAYER 3: 3D LIQUID GLASS CAPSULES (VIALS) -->
-  <g id="layer-vials" inkscape:label="Liquid Glass Vials" inkscape:groupmode="layer">
-
-    <!-- VIAL 1: Aqua / Cyan (x=96, y=270, w=56, h=120) -->
-    <g id="vial-1">
-      <!-- Outer Glass Tube Body -->
-      <rect x="96" y="270" width="56" height="120" rx="20" ry="20"
-            fill="#FFFFFF" fill-opacity="0.55"
-            stroke="#94A3B8" stroke-opacity="0.45" stroke-width="1.5" />
-
-      <!-- Inner Luminous Liquid Core (Seamless 3D Cylinder Body) -->
-      <path d="M 100 282 L 100 370 A 16 16 0 0 0 116 386 L 132 386 A 16 16 0 0 0 148 370 L 148 282 A 24 6 0 0 0 100 282 Z"
-            fill="url(#liquidVial1)" stroke="#FFFFFF" stroke-opacity="0.30" stroke-width="1.2"
-            filter="url(#liquidGlow)" />
-
-      <!-- Left Specular Streak (Left Half, Full Height, Seamlessly Clipped to Liquid Core) -->
-      <rect x="100" y="276" width="24" height="110"
-            fill="url(#glassStreak)" clip-path="url(#liquidClip1)" />
-
-      <!-- Right Edge Refraction (Right Half, Full Height, Seamlessly Clipped to Liquid Core) -->
-      <rect x="124" y="276" width="24" height="110"
-            fill="url(#glassRightRefract)" clip-path="url(#liquidClip1)" />
-
-      <!-- Liquid Meniscus Highlight (Flush 3D Surface Rim) -->
-      <ellipse cx="124" cy="282" rx="24" ry="6"
-               fill="#E0F7FA" fill-opacity="0.90"
-               stroke="#FFFFFF" stroke-opacity="0.75" stroke-width="1.2" />
-
-      <!-- Rising Micro Bubbles -->
-      <circle cx="120" cy="340" r="2.5" fill="#FFFFFF" opacity="0.7" />
-      <circle cx="132" cy="315" r="1.8" fill="#FFFFFF" opacity="0.8" />
-    </g>
-
-    <!-- VIAL 2: Neon Violet / Orchid (x=180, y=190, w=56, h=200) -->
-    <g id="vial-2">
-      <!-- Outer Glass Tube Body -->
-      <rect x="180" y="190" width="56" height="200" rx="20" ry="20"
-            fill="#FFFFFF" fill-opacity="0.55"
-            stroke="#94A3B8" stroke-opacity="0.45" stroke-width="1.5" />
-
-      <!-- Inner Luminous Liquid Core (Seamless 3D Cylinder Body) -->
-      <path d="M 184 202 L 184 370 A 16 16 0 0 0 200 386 L 216 386 A 16 16 0 0 0 232 370 L 232 202 A 24 6 0 0 0 184 202 Z"
-            fill="url(#liquidVial2)" stroke="#FFFFFF" stroke-opacity="0.30" stroke-width="1.2"
-            filter="url(#liquidGlow)" />
-
-      <!-- Left Specular Streak (Left Half, Full Height, Seamlessly Clipped to Liquid Core) -->
-      <rect x="184" y="196" width="24" height="190"
-            fill="url(#glassStreak)" clip-path="url(#liquidClip2)" />
-
-      <!-- Right Edge Refraction (Right Half, Full Height, Seamlessly Clipped to Liquid Core) -->
-      <rect x="208" y="196" width="24" height="190"
-            fill="url(#glassRightRefract)" clip-path="url(#liquidClip2)" />
-
-      <!-- Liquid Meniscus Highlight (Flush 3D Surface Rim) -->
-      <ellipse cx="208" cy="202" rx="24" ry="6"
-               fill="#FCE7F3" fill-opacity="0.90"
-               stroke="#FFFFFF" stroke-opacity="0.75" stroke-width="1.2" />
-
-      <!-- Micro Bubbles -->
-      <circle cx="202" cy="310" r="2.8" fill="#FFFFFF" opacity="0.7" />
-      <circle cx="216" cy="260" r="2.0" fill="#FFFFFF" opacity="0.8" />
-      <circle cx="205" cy="235" r="1.5" fill="#FFFFFF" opacity="0.8" />
-    </g>
-
-    <!-- VIAL 3: Emerald / Neon Mint (x=264, y=240, w=56, h=150) -->
-    <g id="vial-3">
-      <!-- Outer Glass Tube Body -->
-      <rect x="264" y="240" width="56" height="150" rx="20" ry="20"
-            fill="#FFFFFF" fill-opacity="0.55"
-            stroke="#94A3B8" stroke-opacity="0.45" stroke-width="1.5" />
-
-      <!-- Inner Luminous Liquid Core (Seamless 3D Cylinder Body) -->
-      <path d="M 268 252 L 268 370 A 16 16 0 0 0 284 386 L 300 386 A 16 16 0 0 0 316 370 L 316 252 A 24 6 0 0 0 268 252 Z"
-            fill="url(#liquidVial3)" stroke="#FFFFFF" stroke-opacity="0.30" stroke-width="1.2"
-            filter="url(#liquidGlow)" />
-
-      <!-- Left Specular Streak (Left Half, Full Height, Seamlessly Clipped to Liquid Core) -->
-      <rect x="268" y="246" width="24" height="140"
-            fill="url(#glassStreak)" clip-path="url(#liquidClip3)" />
-
-      <!-- Right Edge Refraction (Right Half, Full Height, Seamlessly Clipped to Liquid Core) -->
-      <rect x="292" y="246" width="24" height="140"
-            fill="url(#glassRightRefract)" clip-path="url(#liquidClip3)" />
-
-      <!-- Liquid Meniscus Highlight (Flush 3D Surface Rim) -->
-      <ellipse cx="292" cy="252" rx="24" ry="6"
-               fill="#ECFDF5" fill-opacity="0.90"
-               stroke="#FFFFFF" stroke-opacity="0.75" stroke-width="1.2" />
-
-      <!-- Micro Bubbles -->
-      <circle cx="286" cy="320" r="2.5" fill="#FFFFFF" opacity="0.7" />
-      <circle cx="298" cy="285" r="2.0" fill="#FFFFFF" opacity="0.8" />
-    </g>
-
-    <!-- VIAL 4: Royal Electric Blue (x=348, y=140, w=56, h=250) -->
-    <g id="vial-4">
-      <!-- Outer Glass Tube Body -->
-      <rect x="348" y="140" width="56" height="250" rx="20" ry="20"
-            fill="#FFFFFF" fill-opacity="0.55"
-            stroke="#94A3B8" stroke-opacity="0.45" stroke-width="1.5" />
-
-      <!-- Inner Luminous Liquid Core (Seamless 3D Cylinder Body) -->
-      <path d="M 352 152 L 352 370 A 16 16 0 0 0 368 386 L 384 386 A 16 16 0 0 0 400 370 L 400 152 A 24 6 0 0 0 352 152 Z"
-            fill="url(#liquidVial4)" stroke="#FFFFFF" stroke-opacity="0.30" stroke-width="1.2"
-            filter="url(#liquidGlow)" />
-
-      <!-- Left Specular Streak (Left Half, Full Height, Seamlessly Clipped to Liquid Core) -->
-      <rect x="352" y="146" width="24" height="240"
-            fill="url(#glassStreak)" clip-path="url(#liquidClip4)" />
-
-      <!-- Right Edge Refraction (Right Half, Full Height, Seamlessly Clipped to Liquid Core) -->
-      <rect x="376" y="146" width="24" height="240"
-            fill="url(#glassRightRefract)" clip-path="url(#liquidClip4)" />
-
-      <!-- Liquid Meniscus Highlight (Flush 3D Surface Rim) -->
-      <ellipse cx="376" cy="152" rx="24" ry="6"
-               fill="#EFF6FF" fill-opacity="0.90"
-               stroke="#FFFFFF" stroke-opacity="0.75" stroke-width="1.2" />
-
-      <!-- Micro Bubbles -->
-      <circle cx="370" cy="300" r="3.0" fill="#FFFFFF" opacity="0.7" />
-      <circle cx="382" cy="230" r="2.2" fill="#FFFFFF" opacity="0.8" />
-      <circle cx="368" cy="190" r="1.8" fill="#FFFFFF" opacity="0.8" />
+  <!-- LAYER 3: MAGNIFYING GLASS DROP SHADOW (CAST ON FILE STACK & BACKGROUND) -->
+  <g id="layer-glass-shadow" filter="url(#glassCastShadow)">
+    <circle cx="224" cy="202" r="162" fill="#0F172A" />
+    <g transform="rotate(42, 224, 202)">
+      <rect x="380" y="186" width="138" height="32" rx="16" fill="#0F172A" />
     </g>
   </g>
 
-  <!-- LAYER 4: MOLTEN GOLD FLUID STREAM & LIQUID GLASS BEADS -->
-  <g id="layer-stream" inkscape:label="Molten Stream" inkscape:groupmode="layer" filter="url(#moltenGlow)">
-    <!-- Fluid Gold Stream -->
-    <path d="M 124 250 C 160 178, 175 162, 208 170 C 245 178, 260 228, 292 214 C 325 198, 345 120, 376 112"
-          fill="none" stroke="url(#moltenGold)" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round" />
+  <!-- LAYER 4: MAGNIFIED VIEW (LINE DENSITY PLOT INSIDE ENLARGED LENS) -->
+  <g id="layer-magnified-plot" clip-path="url(#lensGlassClip)">
 
-    <!-- 3D Liquid Glass Spheres / Beads -->
-    <!-- Bead 1 -->
-    <circle cx="124" cy="250" r="14" fill="#FFA000" opacity="0.25" />
-    <circle cx="124" cy="250" r="8.5" fill="url(#glassBead)" stroke="#FFFFFF" stroke-width="1.5" />
-    <circle cx="121.5" cy="247.5" r="2.5" fill="#FFFFFF" />
+        <!-- Lens Frosted Glass Substrate -->
+        <circle cx="224" cy="202" r="138" fill="url(#lensPlotBg)" />
+        
+<line x1="119" y1="130" x2="329" y2="130" stroke="#CBD5E1" stroke-width="0.9" stroke-dasharray="4,5" stroke-opacity="0.85" />
+<line x1="119" y1="170" x2="329" y2="170" stroke="#CBD5E1" stroke-width="0.9" stroke-dasharray="4,5" stroke-opacity="0.85" />
+<line x1="119" y1="210" x2="329" y2="210" stroke="#CBD5E1" stroke-width="0.9" stroke-dasharray="4,5" stroke-opacity="0.85" />
+<line x1="119" y1="240" x2="329" y2="240" stroke="#CBD5E1" stroke-width="0.9" stroke-dasharray="4,5" stroke-opacity="0.85" />
+<line x1="154" y1="102" x2="154" y2="264" stroke="#E2E8F0" stroke-width="0.8" stroke-dasharray="3,6" stroke-opacity="0.75" />
+<line x1="206" y1="102" x2="206" y2="264" stroke="#E2E8F0" stroke-width="0.8" stroke-dasharray="3,6" stroke-opacity="0.75" />
+<line x1="260" y1="102" x2="260" y2="264" stroke="#E2E8F0" stroke-width="0.8" stroke-dasharray="3,6" stroke-opacity="0.75" />
+<line x1="304" y1="102" x2="304" y2="264" stroke="#E2E8F0" stroke-width="0.8" stroke-dasharray="3,6" stroke-opacity="0.75" />
+<line x1="114" y1="264" x2="334" y2="264" stroke="#94A3B8" stroke-width="2.2" stroke-linecap="round" />
+<line x1="130" y1="264" x2="130" y2="269" stroke="#94A3B8" stroke-width="1.5" />
+<line x1="158" y1="264" x2="158" y2="269" stroke="#94A3B8" stroke-width="1.5" />
+<line x1="186" y1="264" x2="186" y2="269" stroke="#94A3B8" stroke-width="1.5" />
+<line x1="214" y1="264" x2="214" y2="269" stroke="#94A3B8" stroke-width="1.5" />
+<line x1="242" y1="264" x2="242" y2="269" stroke="#94A3B8" stroke-width="1.5" />
+<line x1="270" y1="264" x2="270" y2="269" stroke="#94A3B8" stroke-width="1.5" />
+<line x1="298" y1="264" x2="298" y2="269" stroke="#94A3B8" stroke-width="1.5" />
+<line x1="326" y1="264" x2="326" y2="269" stroke="#94A3B8" stroke-width="1.5" />
+<path d="M 114 264 L 114 259.49 L 116 258.75 L 118 257.92 L 120 256.99 L 122 255.94 L 124 254.79 L 126 253.52 L 128 252.13 L 130 250.61 L 132 248.97 L 134 247.21 L 136 245.32 L 138 243.31 L 140 241.19 L 142 238.97 L 144 236.65 L 146 234.26 L 148 231.81 L 150 229.30 L 152 226.78 L 154 224.25 L 156 221.74 L 158 219.27 L 160 216.88 L 162 214.58 L 164 212.40 L 166 210.38 L 168 208.52 L 170 206.86 L 172 205.42 L 174 204.21 L 176 203.25 L 178 202.56 L 180 202.14 L 182 202.00 L 184 202.14 L 186 202.56 L 188 203.25 L 190 204.21 L 192 205.42 L 194 206.86 L 196 208.52 L 198 210.38 L 200 212.40 L 202 214.58 L 204 216.88 L 206 219.27 L 208 221.74 L 210 224.25 L 212 226.78 L 214 229.30 L 216 231.81 L 218 234.26 L 220 236.65 L 222 238.97 L 224 241.19 L 226 243.31 L 228 245.32 L 230 247.21 L 232 248.97 L 234 250.61 L 236 252.13 L 238 253.52 L 240 254.79 L 242 255.94 L 244 256.99 L 246 257.92 L 248 258.75 L 250 259.49 L 252 260.15 L 254 260.72 L 256 261.22 L 258 261.65 L 260 262.03 L 262 262.35 L 264 262.63 L 266 262.86 L 268 263.06 L 270 263.23 L 272 263.37 L 274 263.49 L 276 263.59 L 278 263.67 L 280 263.73 L 282 263.79 L 284 263.83 L 286 263.87 L 288 263.89 L 290 263.92 L 292 263.93 L 294 263.95 L 296 263.96 L 298 263.97 L 300 263.98 L 302 263.98 L 304 263.99 L 306 263.99 L 308 263.99 L 310 263.99 L 312 264.00 L 314 264.00 L 316 264.00 L 318 264.00 L 320 264.00 L 322 264.00 L 324 264.00 L 326 264.00 L 328 264.00 L 330 264.00 L 332 264.00 L 334 264.00 L 334 264 Z" fill="url(#densityAreaEmerald)" opacity="0.45" />
+<path d="M 114 259.49 L 116 258.75 L 118 257.92 L 120 256.99 L 122 255.94 L 124 254.79 L 126 253.52 L 128 252.13 L 130 250.61 L 132 248.97 L 134 247.21 L 136 245.32 L 138 243.31 L 140 241.19 L 142 238.97 L 144 236.65 L 146 234.26 L 148 231.81 L 150 229.30 L 152 226.78 L 154 224.25 L 156 221.74 L 158 219.27 L 160 216.88 L 162 214.58 L 164 212.40 L 166 210.38 L 168 208.52 L 170 206.86 L 172 205.42 L 174 204.21 L 176 203.25 L 178 202.56 L 180 202.14 L 182 202.00 L 184 202.14 L 186 202.56 L 188 203.25 L 190 204.21 L 192 205.42 L 194 206.86 L 196 208.52 L 198 210.38 L 200 212.40 L 202 214.58 L 204 216.88 L 206 219.27 L 208 221.74 L 210 224.25 L 212 226.78 L 214 229.30 L 216 231.81 L 218 234.26 L 220 236.65 L 222 238.97 L 224 241.19 L 226 243.31 L 228 245.32 L 230 247.21 L 232 248.97 L 234 250.61 L 236 252.13 L 238 253.52 L 240 254.79 L 242 255.94 L 244 256.99 L 246 257.92 L 248 258.75 L 250 259.49 L 252 260.15 L 254 260.72 L 256 261.22 L 258 261.65 L 260 262.03 L 262 262.35 L 264 262.63 L 266 262.86 L 268 263.06 L 270 263.23 L 272 263.37 L 274 263.49 L 276 263.59 L 278 263.67 L 280 263.73 L 282 263.79 L 284 263.83 L 286 263.87 L 288 263.89 L 290 263.92 L 292 263.93 L 294 263.95 L 296 263.96 L 298 263.97 L 300 263.98 L 302 263.98 L 304 263.99 L 306 263.99 L 308 263.99 L 310 263.99 L 312 264.00 L 314 264.00 L 316 264.00 L 318 264.00 L 320 264.00 L 322 264.00 L 324 264.00 L 326 264.00 L 328 264.00 L 330 264.00 L 332 264.00 L 334 264.00 " fill="none" stroke="#10B981" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
+<path d="M 114 264 L 114 264.00 L 116 264.00 L 118 264.00 L 120 264.00 L 122 264.00 L 124 264.00 L 126 264.00 L 128 264.00 L 130 264.00 L 132 264.00 L 134 264.00 L 136 264.00 L 138 264.00 L 140 264.00 L 142 263.99 L 144 263.99 L 146 263.99 L 148 263.98 L 150 263.98 L 152 263.97 L 154 263.96 L 156 263.95 L 158 263.93 L 160 263.91 L 162 263.88 L 164 263.84 L 166 263.79 L 168 263.73 L 170 263.65 L 172 263.55 L 174 263.43 L 176 263.28 L 178 263.10 L 180 262.87 L 182 262.59 L 184 262.26 L 186 261.86 L 188 261.38 L 190 260.81 L 192 260.14 L 194 259.35 L 196 258.43 L 198 257.37 L 200 256.15 L 202 254.75 L 204 253.17 L 206 251.39 L 208 249.40 L 210 247.18 L 212 244.73 L 214 242.06 L 216 239.14 L 218 236.00 L 220 232.63 L 222 229.05 L 224 225.28 L 226 221.34 L 228 217.25 L 230 213.06 L 232 208.80 L 234 204.51 L 236 200.25 L 238 196.06 L 240 191.99 L 242 188.09 L 244 184.43 L 246 181.06 L 248 178.02 L 250 175.36 L 252 173.12 L 254 171.34 L 256 170.05 L 258 169.26 L 260 169.00 L 262 169.26 L 264 170.05 L 266 171.34 L 268 173.12 L 270 175.36 L 272 178.02 L 274 181.06 L 276 184.43 L 278 188.09 L 280 191.99 L 282 196.06 L 284 200.25 L 286 204.51 L 288 208.80 L 290 213.06 L 292 217.25 L 294 221.34 L 296 225.28 L 298 229.05 L 300 232.63 L 302 236.00 L 304 239.14 L 306 242.06 L 308 244.73 L 310 247.18 L 312 249.40 L 314 251.39 L 316 253.17 L 318 254.75 L 320 256.15 L 322 257.37 L 324 258.43 L 326 259.35 L 328 260.14 L 330 260.81 L 332 261.38 L 334 261.86 L 334 264 Z" fill="url(#densityAreaViolet)" opacity="0.55" />
+<path d="M 114 264.00 L 116 264.00 L 118 264.00 L 120 264.00 L 122 264.00 L 124 264.00 L 126 264.00 L 128 264.00 L 130 264.00 L 132 264.00 L 134 264.00 L 136 264.00 L 138 264.00 L 140 264.00 L 142 263.99 L 144 263.99 L 146 263.99 L 148 263.98 L 150 263.98 L 152 263.97 L 154 263.96 L 156 263.95 L 158 263.93 L 160 263.91 L 162 263.88 L 164 263.84 L 166 263.79 L 168 263.73 L 170 263.65 L 172 263.55 L 174 263.43 L 176 263.28 L 178 263.10 L 180 262.87 L 182 262.59 L 184 262.26 L 186 261.86 L 188 261.38 L 190 260.81 L 192 260.14 L 194 259.35 L 196 258.43 L 198 257.37 L 200 256.15 L 202 254.75 L 204 253.17 L 206 251.39 L 208 249.40 L 210 247.18 L 212 244.73 L 214 242.06 L 216 239.14 L 218 236.00 L 220 232.63 L 222 229.05 L 224 225.28 L 226 221.34 L 228 217.25 L 230 213.06 L 232 208.80 L 234 204.51 L 236 200.25 L 238 196.06 L 240 191.99 L 242 188.09 L 244 184.43 L 246 181.06 L 248 178.02 L 250 175.36 L 252 173.12 L 254 171.34 L 256 170.05 L 258 169.26 L 260 169.00 L 262 169.26 L 264 170.05 L 266 171.34 L 268 173.12 L 270 175.36 L 272 178.02 L 274 181.06 L 276 184.43 L 278 188.09 L 280 191.99 L 282 196.06 L 284 200.25 L 286 204.51 L 288 208.80 L 290 213.06 L 292 217.25 L 294 221.34 L 296 225.28 L 298 229.05 L 300 232.63 L 302 236.00 L 304 239.14 L 306 242.06 L 308 244.73 L 310 247.18 L 312 249.40 L 314 251.39 L 316 253.17 L 318 254.75 L 320 256.15 L 322 257.37 L 324 258.43 L 326 259.35 L 328 260.14 L 330 260.81 L 332 261.38 L 334 261.86 " fill="none" stroke="#8B5CF6" stroke-width="3.0" stroke-linecap="round" stroke-linejoin="round" />
+<path d="M 114 264 L 114 263.91 L 116 263.88 L 118 263.83 L 120 263.77 L 122 263.69 L 124 263.59 L 126 263.46 L 128 263.29 L 130 263.07 L 132 262.79 L 134 262.44 L 136 262.01 L 138 261.47 L 140 260.81 L 142 260.01 L 144 259.04 L 146 257.87 L 148 256.48 L 150 254.84 L 152 252.92 L 154 250.69 L 156 248.13 L 158 245.19 L 160 241.87 L 162 238.14 L 164 233.99 L 166 229.41 L 168 224.41 L 170 218.99 L 172 213.18 L 174 207.01 L 176 200.54 L 178 193.80 L 180 186.87 L 182 179.83 L 184 172.75 L 186 165.74 L 188 158.88 L 190 152.27 L 192 146.00 L 194 140.16 L 196 134.84 L 198 130.11 L 200 126.02 L 202 122.62 L 204 119.94 L 206 118.01 L 208 116.82 L 210 116.37 L 212 116.63 L 214 117.56 L 216 119.15 L 218 121.33 L 220 124.07 L 222 127.33 L 224 131.06 L 226 135.21 L 228 139.76 L 230 144.67 L 232 149.90 L 234 155.41 L 236 161.18 L 238 167.15 L 240 173.29 L 242 179.55 L 244 185.88 L 246 192.22 L 248 198.51 L 250 204.70 L 252 210.72 L 254 216.52 L 256 222.04 L 258 227.25 L 260 232.09 L 262 236.55 L 264 240.61 L 266 244.27 L 268 247.51 L 270 250.36 L 272 252.83 L 274 254.94 L 276 256.73 L 278 258.23 L 280 259.46 L 282 260.47 L 284 261.28 L 286 261.93 L 288 262.44 L 290 262.84 L 292 263.14 L 294 263.37 L 296 263.55 L 298 263.68 L 300 263.77 L 302 263.84 L 304 263.89 L 306 263.92 L 308 263.95 L 310 263.96 L 312 263.98 L 314 263.98 L 316 263.99 L 318 263.99 L 320 264.00 L 322 264.00 L 324 264.00 L 326 264.00 L 328 264.00 L 330 264.00 L 332 264.00 L 334 264.00 L 334 264 Z" fill="url(#densityAreaCyan)" opacity="0.65" />
+<path d="M 114 263.91 L 116 263.88 L 118 263.83 L 120 263.77 L 122 263.69 L 124 263.59 L 126 263.46 L 128 263.29 L 130 263.07 L 132 262.79 L 134 262.44 L 136 262.01 L 138 261.47 L 140 260.81 L 142 260.01 L 144 259.04 L 146 257.87 L 148 256.48 L 150 254.84 L 152 252.92 L 154 250.69 L 156 248.13 L 158 245.19 L 160 241.87 L 162 238.14 L 164 233.99 L 166 229.41 L 168 224.41 L 170 218.99 L 172 213.18 L 174 207.01 L 176 200.54 L 178 193.80 L 180 186.87 L 182 179.83 L 184 172.75 L 186 165.74 L 188 158.88 L 190 152.27 L 192 146.00 L 194 140.16 L 196 134.84 L 198 130.11 L 200 126.02 L 202 122.62 L 204 119.94 L 206 118.01 L 208 116.82 L 210 116.37 L 212 116.63 L 214 117.56 L 216 119.15 L 218 121.33 L 220 124.07 L 222 127.33 L 224 131.06 L 226 135.21 L 228 139.76 L 230 144.67 L 232 149.90 L 234 155.41 L 236 161.18 L 238 167.15 L 240 173.29 L 242 179.55 L 244 185.88 L 246 192.22 L 248 198.51 L 250 204.70 L 252 210.72 L 254 216.52 L 256 222.04 L 258 227.25 L 260 232.09 L 262 236.55 L 264 240.61 L 266 244.27 L 268 247.51 L 270 250.36 L 272 252.83 L 274 254.94 L 276 256.73 L 278 258.23 L 280 259.46 L 282 260.47 L 284 261.28 L 286 261.93 L 288 262.44 L 290 262.84 L 292 263.14 L 294 263.37 L 296 263.55 L 298 263.68 L 300 263.77 L 302 263.84 L 304 263.89 L 306 263.92 L 308 263.95 L 310 263.96 L 312 263.98 L 314 263.98 L 316 263.99 L 318 263.99 L 320 264.00 L 322 264.00 L 324 264.00 L 326 264.00 L 328 264.00 L 330 264.00 L 332 264.00 L 334 264.00 " fill="none" stroke="#0284C7" stroke-width="3.8" stroke-linecap="round" stroke-linejoin="round" />
+<line x1="206" y1="126" x2="206" y2="264" stroke="#0284C7" stroke-width="1.8" stroke-dasharray="4,4" stroke-opacity="0.85" />
 
-    <!-- Bead 2 -->
-    <circle cx="208" cy="170" r="14" fill="#FFA000" opacity="0.25" />
-    <circle cx="208" cy="170" r="8.5" fill="url(#glassBead)" stroke="#FFFFFF" stroke-width="1.5" />
-    <circle cx="205.5" cy="167.5" r="2.5" fill="#FFFFFF" />
+        <!-- Peak Glowing Node -->
+        <circle cx="206" cy="126" r="11" fill="#38BDF8" fill-opacity="0.30" />
+        <circle cx="206" cy="126" r="5.5" fill="#FFFFFF" stroke="#0284C7" stroke-width="2.6" />
+        <circle cx="206" cy="126" r="2.2" fill="#0284C7" />
+        
 
-    <!-- Bead 3 -->
-    <circle cx="292" cy="214" r="14" fill="#FFA000" opacity="0.25" />
-    <circle cx="292" cy="214" r="8.5" fill="url(#glassBead)" stroke="#FFFFFF" stroke-width="1.5" />
-    <circle cx="289.5" cy="211.5" r="2.5" fill="#FFFFFF" />
+        <circle cx="260" cy="169" r="4.5" fill="#FFFFFF" stroke="#8B5CF6" stroke-width="2.2" />
+        
 
-    <!-- Bead 4 (Peak) -->
-    <circle cx="376" cy="112" r="16" fill="#E64A19" opacity="0.30" />
-    <circle cx="376" cy="112" r="9.5" fill="url(#glassBead)" stroke="#FFFFFF" stroke-width="2.0" />
-    <circle cx="373" cy="109" r="3.0" fill="#FFFFFF" />
+        <g transform="translate(238, 104)">
+          <rect x="0" y="0" width="80" height="20" rx="10" fill="#0284C7" fill-opacity="0.14" stroke="#0284C7" stroke-width="1.2" />
+          <text x="40" y="14" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif" font-size="8.5" font-weight="800" fill="#0284C7" text-anchor="middle">DATA VIEW</text>
+        </g>
+        
+
+        <g opacity="0.24">
+          <line x1="114" y1="202" x2="334" y2="202" stroke="#0284C7" stroke-width="1.2" stroke-dasharray="4,6" />
+          <line x1="224" y1="92" x2="224" y2="312" stroke="#0284C7" stroke-width="1.2" stroke-dasharray="4,6" />
+          <circle cx="224" cy="202" r="60" fill="none" stroke="#0284C7" stroke-width="1.2" stroke-dasharray="4,6" />
+        </g>
+        
+<circle cx="224" cy="202" r="138" fill="none" stroke="url(#lensChromatic)" stroke-width="9" />
   </g>
 
-  <!-- LAYER 5: LIQUID GLASS DROPLET EMBLEM (BRAND BADGE) -->
-  <g id="layer-badge" inkscape:label="Liquid Droplet Badge" inkscape:groupmode="layer">
-    <!-- Glass Orb Base -->
-    <circle cx="120" cy="110" r="26" fill="#FFFFFF" fill-opacity="0.65"
-            stroke="#94A3B8" stroke-opacity="0.45" stroke-width="1.5" />
+  <!-- LAYER 5: MAGNIFYING GLASS HARDWARE (METALLIC RIM & HANDLE +50% SIZE) -->
+  <g id="layer-hardware">
+    <!-- Outer Beveled Chrome Rim (24px wide stroke) -->
+    <circle cx="224" cy="202" r="162" fill="none" stroke="url(#rimChromeOuter)" stroke-width="24" />
 
-    <!-- Specular Crescent on top-left of Orb -->
-    <path d="M 102 104 C 104 95, 114 90, 126 92 C 117 94, 108 99, 106 109 Z" fill="#FFFFFF" opacity="0.95" />
+    <!-- Inner Rim Shadow Groove -->
+    <circle cx="224" cy="202" r="135" fill="none" stroke="url(#rimChromeInner)" stroke-width="6" />
 
-    <!-- Inner Refracted Pie Data Droplets -->
-    <path d="M 120 96 A 14 14 0 0 1 134 110 L 120 110 Z" fill="#FFB300" />
-    <path d="M 120 110 L 134 110 A 14 14 0 1 1 120 96 Z" fill="#0284C7" opacity="0.95" />
+    <!-- Outer Rim Glint Ring -->
+    <circle cx="224" cy="202" r="174" fill="none" stroke="#FFFFFF" stroke-opacity="0.75" stroke-width="1.4" />
+
+    <!-- HANDLE ASSEMBLY (Rotated 42 degrees down-right) -->
+    <g transform="rotate(42, 224, 202)">
+      <!-- Metallic Collar Ferrule -->
+      <rect x="380" y="186" width="22" height="32" rx="4"
+            fill="url(#neckGrad)" stroke="#64748B" stroke-width="1.2" />
+      
+      <!-- Main Grip Handle Body (116px long, 28px thick) -->
+      <rect x="402" y="188" width="112" height="28" rx="14"
+            fill="url(#handleBodyGrad)" stroke="#1E293B" stroke-width="1.8" />
+
+      <!-- Handle Glossy Specular Streak -->
+      <rect x="406" y="192" width="104" height="6.5" rx="3.25"
+            fill="url(#handleHighlightGrad)" />
+
+      <!-- Chrome Inlaid Grip Rings -->
+      <line x1="436" y1="188.5" x2="436" y2="215.5" stroke="#E2E8F0" stroke-width="3" />
+      <line x1="444" y1="188.5" x2="444" y2="215.5" stroke="#E2E8F0" stroke-width="3" />
+
+      <!-- Chrome Butt Cap -->
+      <circle cx="514" cy="202" r="14" fill="url(#neckGrad)" stroke="#475569" stroke-width="1.2" />
+      <circle cx="514" cy="202" r="7.5" fill="#FFFFFF" fill-opacity="0.85" />
+    </g>
+  </g>
+
+  <!-- LAYER 6: GLASS LENS SPECULAR REFLECTIONS (OVER RIM & GLASS) -->
+  <g id="layer-glass-specular" clip-path="url(#lensGlassClip)" pointer-events="none">
+    <!-- Broad Soft Glare across Upper Left -->
+    <circle cx="224" cy="202" r="138" fill="url(#glassGlareSoft)" />
+
+    <!-- Crisp Curved Glass Specular Highlight Crescent (Top-Left) -->
+    <path d="M 110 140 C 132 76, 216 70, 296 96 C 252 116, 172 124, 142 170 Z"
+          fill="url(#lensGlareSharp)" />
+
+    <!-- Secondary Rim Reflection Arc (Bottom-Right) -->
+    <path d="M 322 254 C 336 284, 302 318, 256 324 C 286 306, 308 284, 302 254 Z"
+          fill="url(#lensGlareSecondary)" />
+
+    <!-- Brilliant Star Glint on Top-Left Rim Bevel -->
+    <g filter="url(#glintGlow)">
+      <circle cx="128" cy="106" r="5.5" fill="#FFFFFF" />
+      <line x1="108" y1="106" x2="148" y2="106" stroke="#FFFFFF" stroke-width="2.0" stroke-linecap="round" />
+      <line x1="128" y1="86" x2="128" y2="126" stroke="#FFFFFF" stroke-width="2.0" stroke-linecap="round" />
+    </g>
   </g>
 </svg>
