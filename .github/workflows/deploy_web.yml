@@ -32,7 +32,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          Rscript install_deps.R
+          Rscript app/install_deps.R
 
       - name: Export WebAssembly static site
         run: |
