@@ -3408,8 +3408,6 @@ server <- function(input, output, session) {
       rv$inspect_page      <- 1
       rv$inv_sort_col      <- "Index"
       rv$inv_sort_dir      <- "asc"
-      
-      showNotification("Loaded", type = "message", duration = 3)
     }, error = function(e) {
       msg <- e$message
       if (!startsWith(msg, "Failed to read file")) {
