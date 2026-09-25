@@ -141,9 +141,23 @@ read_any_table <- function(file_path, sheet = 1, skip = "auto") {
         if (!requireNamespace("haven", quietly = TRUE)) stop("Package 'haven' is required to read SAS (.sas7bdat) files.")
         as.data.frame(haven::read_sas(file_path))
       },
-      "parquet"  = as.data.frame(arrow::read_parquet(file_path)),
-      "feather"  = as.data.frame(arrow::read_feather(file_path)),
-      "arrow"    = as.data.frame(arrow::read_ipc_file(file_path)),
+      "parquet"  = {
+        if (requireNamespace("nanoparquet", quietly = TRUE)) {
+          as.data.frame(nanoparquet::read_parquet(file_path))
+        } else if (requireNamespace("arrow", quietly = TRUE)) {
+          as.data.frame(arrow::read_parquet(file_path))
+        } else {
+          stop("Package 'nanoparquet' or 'arrow' is required to read Parquet (.parquet) files.")
+        }
+      },
+      "feather"  = {
+        if (!requireNamespace("arrow", quietly = TRUE)) stop("Package 'arrow' is required to read Feather (.feather) files.")
+        as.data.frame(arrow::read_feather(file_path))
+      },
+      "arrow"    = {
+        if (!requireNamespace("arrow", quietly = TRUE)) stop("Package 'arrow' is required to read Arrow (.arrow) files.")
+        as.data.frame(arrow::read_ipc_file(file_path))
+      },
       "fst"      = as.data.frame(fst::read_fst(file_path)),
       "qs"       = as.data.frame(if (requireNamespace("qs2", quietly = TRUE)) qs2::qs_read(file_path) else qs::qread(file_path)),
       "qs2"      = as.data.frame(qs2::qs_read(file_path)),
@@ -913,6 +927,7 @@ generate_html_report <- function(file_name, p, df = NULL) {
     app_logo_svg <- sub('<svg ', '<svg width="38" height="38" ', app_logo_svg)
   }
   
+  safe_name <- htmltools::htmlEscape(basename(file_name))
   sprintf(
 '<!DOCTYPE html>
 <html lang="en">
@@ -1093,7 +1108,7 @@ generate_html_report <- function(file_name, p, df = NULL) {
   </div>
 </body>
 </html>',
-    basename(file_name), app_logo_svg, basename(file_name), format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
+    safe_name, app_logo_svg, safe_name, format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
     if (isTRUE(p$skip_rows > 0)) sprintf(" | Skipped %d title row(s)", p$skip_rows) else "",
     format(p$rows, big.mark = ","), format(p$cols, big.mark = ","), p$memory, p$missing_rate, format(p$duplicates, big.mark = ","),
     inv_rows, num_rows, cat_rows, cor_html,
@@ -1238,7 +1253,20 @@ body {
   cursor: pointer;
 }
 
-.app-dropzone:hover { border-color: var(--app-blue); background: var(--app-blue-soft); }
+.app-dropzone * {
+  pointer-events: none;
+}
+
+.app-dropzone:hover,
+.app-dropzone.dragover {
+  border-color: var(--app-blue);
+  background: var(--app-blue-soft);
+}
+
+.app-dropzone.drag-active {
+  border-color: var(--app-blue);
+  box-shadow: 0 0 0 3px var(--app-blue-soft);
+}
 
 .btn-app-primary {
   background: var(--app-blue) !important;
@@ -2010,11 +2038,105 @@ ui <- fluidPage(
         window.syncIngestionHeight = syncIngestionHeight;
         window.addEventListener('resize', syncIngestionHeight);
 
+        function handleDroppedFiles(files) {
+          if (!files || files.length === 0) return;
+          var fileInput = document.getElementById('file_upload');
+          if (!fileInput) return;
+          fileInput.value = '';
+          try {
+            var dt = new DataTransfer();
+            dt.items.add(files[0]);
+            fileInput.files = dt.files;
+          } catch (e) {
+            try {
+              fileInput.files = files;
+            } catch (err) {
+              console.error('Failed to set dropped files:', err);
+            }
+          }
+          if (window.jQuery) {
+            window.jQuery(fileInput).trigger('change');
+          } else {
+            fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        }
+
+        function initDropzone() {
+          var dropzone = document.getElementById('app_dropzone') || document.querySelector('.app-dropzone');
+          if (!dropzone || dropzone._dragInitialized) return;
+          dropzone._dragInitialized = true;
+
+          // Prevent default browser drag/drop behavior on the entire window (prevents opening file)
+          window.addEventListener('dragover', function(e) {
+            e.preventDefault();
+          }, false);
+
+          window.addEventListener('drop', function(e) {
+            e.preventDefault();
+          }, false);
+
+          var dragCounter = 0;
+          document.addEventListener('dragenter', function(e) {
+            if (e.dataTransfer && e.dataTransfer.types && Array.from(e.dataTransfer.types).includes('Files')) {
+              dragCounter++;
+              dropzone.classList.add('drag-active');
+            }
+          }, false);
+
+          document.addEventListener('dragleave', function(e) {
+            dragCounter--;
+            if (dragCounter <= 0) {
+              dragCounter = 0;
+              dropzone.classList.remove('drag-active');
+              dropzone.classList.remove('dragover');
+            }
+          }, false);
+
+          document.addEventListener('drop', function(e) {
+            dragCounter = 0;
+            dropzone.classList.remove('drag-active');
+            dropzone.classList.remove('dragover');
+            if (!document.body.classList.contains('has-dataset') || (e.target && e.target.closest && e.target.closest('.app-card-ingestion'))) {
+              var files = e.dataTransfer && e.dataTransfer.files;
+              if (files && files.length > 0) {
+                handleDroppedFiles(files);
+              }
+            }
+          }, false);
+
+          dropzone.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            dropzone.classList.add('dragover');
+          }, false);
+
+          dropzone.addEventListener('dragleave', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            dropzone.classList.remove('dragover');
+          }, false);
+
+          dropzone.addEventListener('drop', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            dropzone.classList.remove('dragover');
+            dropzone.classList.remove('drag-active');
+            var files = e.dataTransfer && e.dataTransfer.files;
+            if (files && files.length > 0) {
+              handleDroppedFiles(files);
+            }
+          }, false);
+        }
+
         applyTheme(getTheme());
         document.addEventListener('DOMContentLoaded', function() {
           applyTheme(getTheme());
           setTimeout(syncIngestionHeight, 50);
+          initDropzone();
         });
+        if (document.readyState === 'complete' || document.readyState === 'interactive') {
+          setTimeout(initDropzone, 50);
+        }
         if (window.jQuery) {
           window.jQuery(document).on('shown.bs.tab', 'a[data-toggle=\"tab\"], button[data-bs-toggle=\"tab\"]', function() {
             setTimeout(syncIngestionHeight, 50);
@@ -2027,13 +2149,17 @@ ui <- fluidPage(
               var el = document.getElementById(id);
               if (el) {
                 el.value = '';
-                var wrap = el.closest ? el.closest('.app-file-dropzone, .shiny-input-container') : el.parentElement;
+                var wrap = el.closest ? el.closest('.app-dropzone, .app-file-dropzone, .shiny-input-container') : el.parentElement;
                 if (wrap) {
                   var txt = wrap.querySelector('input[type=\"text\"]');
                   if (txt) txt.value = '';
                   var bar = wrap.querySelector('.progress');
                   if (bar) bar.style.display = 'none';
                 }
+              }
+              var dropzone = document.getElementById('app_dropzone') || document.querySelector('.app-dropzone');
+              if (dropzone) {
+                dropzone.classList.remove('dragover', 'drag-active');
               }
             });
             Shiny.addCustomMessageHandler('setDatasetState', function(hasData) {
@@ -2104,6 +2230,7 @@ ui <- fluidPage(
           
           # Custom drop-zone
           div(
+            id = "app_dropzone",
             class = "app-dropzone",
             onclick = "$('#file_upload').click()",
             div(style = "font-size: 28px; color: #0071E3; margin-bottom: 8px;", icon("cloud-arrow-up")),
@@ -2396,9 +2523,12 @@ server <- function(input, output, session) {
       skip_sel <- if (!is.null(rv$skip_rows)) rv$skip_rows else "auto"
     }
     
+    file_path <- file_info$datapath[1]
+    file_name <- file_info$name[1]
+    
     withProgress(message = "Reading dataset...", detail = "Please wait", value = 0.3, {
       tryCatch({
-        df <- read_any_table(file_info$datapath, sheet = sheet_sel, skip = skip_sel)
+        df <- read_any_table(file_path, sheet = sheet_sel, skip = skip_sel)
         skip_actual <- attr(df, "skip_rows")
         rv$skip_rows <- if (!is.null(skip_actual)) skip_actual else 0
         
@@ -2408,8 +2538,8 @@ server <- function(input, output, session) {
         rv$original_df       <- df
         rv$raw_df            <- df
         rv$type_overrides    <- list()
-        rv$file_name         <- file_info$name
-        rv$file_path         <- file_info$datapath
+        rv$file_name         <- file_name
+        rv$file_path         <- file_path
         rv$current_sheet     <- sheet_sel
         rv$profile           <- p
         rv$report_txt        <- NULL
@@ -2438,10 +2568,10 @@ server <- function(input, output, session) {
   # Ingest and profile file upon initial upload
   observeEvent(input$file_upload, {
     req(input$file_upload)
-    ext <- tolower(tools::file_ext(input$file_upload$name))
+    ext <- tolower(tools::file_ext(input$file_upload$name[1]))
     first_sheet <- 1
     if (ext %in% c("xlsx", "xls")) {
-      sheets <- tryCatch(readxl::excel_sheets(input$file_upload$datapath), error = function(e) NULL)
+      sheets <- tryCatch(readxl::excel_sheets(input$file_upload$datapath[1]), error = function(e) NULL)
       if (length(sheets) > 0) {
         first_sheet <- sheets[1]
       }

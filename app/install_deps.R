@@ -12,7 +12,8 @@ required_packages <- c(
   "data.table",
   "readxl",
   "later",
-  "shinylive"
+  "shinylive",
+  "nanoparquet"
 )
 
 # Optional packages for high-performance serialized & statistical formats
