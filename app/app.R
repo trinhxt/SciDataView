@@ -67,8 +67,9 @@ get_app_icon_svg <- function() {
 detect_title_skip <- function(file_path, ext = NULL, sheet = 1, max_scan = 20) {
   if (is.null(ext)) ext <- tolower(tools::file_ext(file_path))
   
-  # Binary formats already have strict column schemas and no freeform title rows
-  if (ext %in% c("parquet", "feather", "arrow", "fst", "qs", "qs2", "rds", "dta", "sav", "sas7bdat")) {
+  # Binary & sequence formats have strict schemas and no freeform title rows
+  if (ext %in% c("parquet", "feather", "arrow", "fst", "qs", "qs2", "rds", "dta", "sav", "sas7bdat",
+                 "fasta", "fa", "faa", "fna", "fas")) {
     return(0)
   }
   
@@ -107,7 +108,121 @@ detect_title_skip <- function(file_path, ext = NULL, sheet = 1, max_scan = 20) {
   0
 }
 
-# Universal reader supporting all tabular data formats (with auto title skip and fread fallback)
+# Fast, zero-dependency FASTA sequence parser with UniProt & general database classification
+parse_fasta_file <- function(file_path, max_lines = -1) {
+  lines <- readLines(file_path, n = max_lines, warn = FALSE)
+  if (length(lines) == 0) {
+    stop("The FASTA file is empty.")
+  }
+  
+  is_header <- startsWith(lines, ">")
+  if (!any(is_header)) {
+    stop("No FASTA headers (lines starting with '>') found in file.")
+  }
+  
+  header_idx <- which(is_header)
+  n_seqs <- length(header_idx)
+  headers <- lines[header_idx]
+  
+  # Group sequence lines by sequence index using cumsum
+  seq_ids <- cumsum(is_header)
+  non_h <- lines[!is_header]
+  non_h_id <- seq_ids[!is_header]
+  
+  seqs <- character(n_seqs)
+  if (length(non_h) > 0) {
+    agg <- tapply(non_h, non_h_id, paste, collapse = "")
+    seqs[as.integer(names(agg))] <- unname(agg)
+  }
+  
+  clean_h <- sub("^>\\s*", "", headers)
+  
+  # Check for pipe-delimited format (UniProt / NCBI / PDB: >db|accession|entry_name description)
+  has_pipe <- grepl("^[a-zA-Z0-9_-]+\\|", clean_h)
+  
+  db_code <- rep("other", n_seqs)
+  acc <- character(n_seqs)
+  entry_name <- character(n_seqs)
+  desc <- character(n_seqs)
+  organism <- rep(NA_character_, n_seqs)
+  gene <- rep(NA_character_, n_seqs)
+  
+  if (any(has_pipe)) {
+    p_h <- clean_h[has_pipe]
+    raw_db <- sub("^([a-zA-Z0-9_-]+)\\|.*", "\\1", p_h)
+    db_clean <- tolower(raw_db)
+    
+    # Map common DB codes
+    db_label <- ifelse(db_clean == "sp", "sp (Swiss-Prot)",
+                ifelse(db_clean == "tr", "tr (TrEMBL)",
+                ifelse(db_clean == "pdb", "pdb (PDB)",
+                ifelse(db_clean == "ref", "ref (RefSeq)",
+                ifelse(db_clean == "iso", "iso (Isoform)", paste0(raw_db, " (custom)"))))))
+    db_code[has_pipe] <- db_label
+    
+    p_rest <- sub("^[a-zA-Z0-9_-]+\\|", "", p_h)
+    p_acc <- sub("\\|.*", "", p_rest)
+    acc[has_pipe] <- p_acc
+    
+    p_after_acc <- sub("^[^\\|]*\\|", "", p_rest)
+    entry_part <- sub("[[:space:]]+.*", "", p_after_acc)
+    entry_name[has_pipe] <- entry_part
+    
+    desc_part <- sub("^[^[:space:]]+[[:space:]]*", "", p_after_acc)
+    desc[has_pipe] <- desc_part
+  }
+  
+  if (any(!has_pipe)) {
+    np_h <- clean_h[!has_pipe]
+    first_tok <- sub("[[:space:]]+.*", "", np_h)
+    rest_tok <- sub("^[^[:space:]]+[[:space:]]*", "", np_h)
+    acc[!has_pipe] <- first_tok
+    entry_name[!has_pipe] <- first_tok
+    desc[!has_pipe] <- rest_tok
+  }
+  
+  # Extract Organism (OS=...) and Gene (GN=...) if present (standard UniProt metadata)
+  has_os <- grepl("OS=", desc)
+  if (any(has_os)) {
+    organism[has_os] <- sub(".*OS=([^=]+?)(?:[[:space:]]+OX=|[[:space:]]+GN=|[[:space:]]+PE=|[[:space:]]+SV=|$).*", "\\1", desc[has_os])
+  }
+  has_gn <- grepl("GN=", desc)
+  if (any(has_gn)) {
+    gene[has_gn] <- sub(".*GN=([^[:space:]=]+).*", "\\1", desc[has_gn])
+  }
+  
+  seq_lens <- nchar(seqs)
+  
+  df <- data.frame(
+    Accession   = acc,
+    Database    = db_code,
+    Entry_Name  = ifelse(nzchar(entry_name), entry_name, "-"),
+    Gene        = ifelse(is.na(gene) | !nzchar(gene), "-", gene),
+    Organism    = ifelse(is.na(organism) | !nzchar(organism), "-", organism),
+    Length      = seq_lens,
+    Description = ifelse(nzchar(desc), desc, "-"),
+    Sequence    = seqs,
+    stringsAsFactors = FALSE,
+    check.names = FALSE
+  )
+  
+  # Tabulate database counts
+  db_table <- sort(table(db_code), decreasing = TRUE)
+  db_counts <- data.frame(
+    Database = names(db_table),
+    Sequences = as.integer(db_table),
+    Percentage = round(100 * as.numeric(db_table) / n_seqs, 2),
+    stringsAsFactors = FALSE
+  )
+  
+  attr(df, "is_fasta") <- TRUE
+  attr(df, "fasta_db_counts") <- db_counts
+  attr(df, "total_sequences") <- n_seqs
+  
+  df
+}
+
+# Universal reader supporting all tabular data formats (with auto title skip, FASTA and fread fallback)
 read_any_table <- function(file_path, sheet = 1, skip = "auto") {
   if (!file.exists(file_path)) {
     stop(sprintf("File does not exist: %s", file_path))
@@ -125,7 +240,30 @@ read_any_table <- function(file_path, sheet = 1, skip = "auto") {
     switch(ext,
       "csv"      = data.table::fread(file_path, skip = skip_n, data.table = FALSE, check.names = FALSE),
       "tsv"      = data.table::fread(file_path, sep = "\t", skip = skip_n, data.table = FALSE, check.names = FALSE),
-      "txt"      = data.table::fread(file_path, skip = skip_n, data.table = FALSE, check.names = FALSE),
+      "txt"      = {
+        # Check if text file is FASTA formatted
+        first_char <- tryCatch({
+          con <- file(file_path, "r")
+          on.exit(close(con))
+          first_line <- ""
+          while (length(l <- readLines(con, n = 1, warn = FALSE)) > 0) {
+            tl <- trimws(l)
+            if (nzchar(tl)) { first_line <- tl; break }
+          }
+          substr(first_line, 1, 1)
+        }, error = function(e) "")
+        
+        if (identical(first_char, ">")) {
+          parse_fasta_file(file_path)
+        } else {
+          data.table::fread(file_path, skip = skip_n, data.table = FALSE, check.names = FALSE)
+        }
+      },
+      "fasta"    = parse_fasta_file(file_path),
+      "fa"       = parse_fasta_file(file_path),
+      "faa"      = parse_fasta_file(file_path),
+      "fna"      = parse_fasta_file(file_path),
+      "fas"      = parse_fasta_file(file_path),
       "xlsx"     = as.data.frame(readxl::read_excel(file_path, sheet = sheet, skip = skip_n)),
       "xls"      = as.data.frame(readxl::read_excel(file_path, sheet = sheet, skip = skip_n)),
       "rds"      = as.data.frame(readRDS(file_path)),
@@ -163,7 +301,22 @@ read_any_table <- function(file_path, sheet = 1, skip = "auto") {
       "qs2"      = as.data.frame(qs2::qs_read(file_path)),
       # Fallback for custom / bioinformatics / arbitrary extensions (.linear, .assoc, .raw, etc.)
       {
-        data.table::fread(file_path, skip = skip_n, data.table = FALSE, check.names = FALSE)
+        first_char <- tryCatch({
+          con <- file(file_path, "r")
+          on.exit(close(con))
+          first_line <- ""
+          while (length(l <- readLines(con, n = 1, warn = FALSE)) > 0) {
+            tl <- trimws(l)
+            if (nzchar(tl)) { first_line <- tl; break }
+          }
+          substr(first_line, 1, 1)
+        }, error = function(e) "")
+        
+        if (identical(first_char, ">")) {
+          parse_fasta_file(file_path)
+        } else {
+          data.table::fread(file_path, skip = skip_n, data.table = FALSE, check.names = FALSE)
+        }
       }
     )
   }, error = function(e) {
@@ -689,6 +842,8 @@ profile_dataset <- function(df, type_overrides = list(), lazy = FALSE) {
     cor_matrix    = if (!is.null(cor_res)) cor_res$matrix else NULL,
     cor_meta      = cor_res,
     hygiene_flags = hygiene_flags,
+    is_fasta      = isTRUE(attr(df, "is_fasta")),
+    fasta_db_counts = attr(df, "fasta_db_counts"),
     skip_rows     = if (!is.null(attr(df, "skip_rows"))) attr(df, "skip_rows") else 0
   )
 }
@@ -742,50 +897,64 @@ generate_text_report <- function(file_name, p, df = NULL) {
   }
   add_l("")
   
-  # SECTION 2: DATA QUALITY FLAGS
-  add_box("SECTION 2: DATA QUALITY & HYGIENE SCREENING")
-  for (flag in p$hygiene_flags) {
-    add_l("[%s] %s: %s", toupper(flag$level), flag$title, flag$desc)
-  }
-  add_l("")
-  
-  # SECTION 3: COLUMN INVENTORY
-  add_box("SECTION 3: COLUMN INVENTORY & CLASSIFICATION")
-  add_l("%-4s %-25s %-20s %-10s %-10s %-8s %-12s", "Idx", "Column Name", "Data type", "Complete", "Missing", "Miss %", "Distinct")
-  add_l("--------------------------------------------------------------------------------")
-  for (i in seq_len(nrow(p$inventory))) {
-    r <- p$inventory[i, ]
-    add_l("%-4d %-25s %-20s %-10s %-10s %-8.1f %-12s",
-          r$Index, substr(r$Column_Name, 1, 24), substr(r$Data_Type, 1, 19),
-          format(r$Complete_N, big.mark = ","), format(r$Missing_N, big.mark = ","),
-          r$Missing_Pct, format(r$Distinct_N, big.mark = ","))
-  }
-  add_l("")
-  
-  # SECTION 4: NUMERIC DISTRIBUTIONS & MOMENTS (P2)
-  if (nrow(p$numeric) > 0) {
-    add_box("SECTION 4: NUMERIC DISTRIBUTIONS, SKEWNESS & OUTLIERS")
-    add_l("%-20s %-16s %-16s %-7s %-12s", "Variable", "Mean (SD)", "Median [IQR]", "Skew", "Outliers")
+  # FASTA DATABASE BREAKDOWN (IF FASTA)
+  if (isTRUE(p$is_fasta) && !is.null(p$fasta_db_counts)) {
+    add_box("FASTA SEQUENCE DATABASE BREAKDOWN")
+    add_l("%-25s %-15s %-10s", "Database Source", "Sequences", "Percentage")
     add_l("--------------------------------------------------------------------------------")
-    for (i in seq_len(nrow(p$numeric))) {
-      nm <- p$numeric[i, ]
-      msd <- sprintf("%.1f (%.1f)", nm$Mean, nm$SD)
-      miqr <- sprintf("%.1f [%.1f]", nm$Median, nm$IQR)
-      out_str <- sprintf("%d (%.1f%%)", nm$Outliers_N, nm$Outliers_Pct)
-      add_l("%-20s %-16s %-16s %-7.2f %-12s",
-            substr(nm$Variable, 1, 19), msd, miqr, nm$Skewness, out_str)
+    for (i in seq_len(nrow(p$fasta_db_counts))) {
+      r <- p$fasta_db_counts[i, ]
+      add_l("%-25s %-15s %-9.2f%%", r$Database, format(r$Sequences, big.mark = ","), r$Percentage)
     }
     add_l("")
   }
   
-  # SECTION 5: CATEGORICAL DISTRIBUTIONS
-  if (nrow(p$categorical) > 0) {
-    add_box("SECTION 5: CATEGORICAL & DISCRETE DISTRIBUTIONS")
-    for (i in seq_len(nrow(p$categorical))) {
-      c_row <- p$categorical[i, ]
-      add_l("Variable: %s (Levels: %d)", c_row$Variable, c_row$Total_Levels)
-      add_l("  Distribution: %s", c_row$Top_Categories)
+  if (!isTRUE(p$is_fasta)) {
+    # SECTION 2: DATA QUALITY FLAGS
+    add_box("SECTION 2: DATA QUALITY & HYGIENE SCREENING")
+    for (flag in p$hygiene_flags) {
+      add_l("[%s] %s: %s", toupper(flag$level), flag$title, flag$desc)
+    }
+    add_l("")
+    
+    # SECTION 3: COLUMN INVENTORY
+    add_box("SECTION 3: COLUMN INVENTORY & CLASSIFICATION")
+    add_l("%-4s %-25s %-20s %-10s %-10s %-8s %-12s", "Idx", "Column Name", "Data type", "Complete", "Missing", "Miss %", "Distinct")
+    add_l("--------------------------------------------------------------------------------")
+    for (i in seq_len(nrow(p$inventory))) {
+      r <- p$inventory[i, ]
+      add_l("%-4d %-25s %-20s %-10s %-10s %-8.1f %-12s",
+            r$Index, substr(r$Column_Name, 1, 24), substr(r$Data_Type, 1, 19),
+            format(r$Complete_N, big.mark = ","), format(r$Missing_N, big.mark = ","),
+            r$Missing_Pct, format(r$Distinct_N, big.mark = ","))
+    }
+    add_l("")
+    
+    # SECTION 4: NUMERIC DISTRIBUTIONS & MOMENTS (P2)
+    if (nrow(p$numeric) > 0) {
+      add_box("SECTION 4: NUMERIC DISTRIBUTIONS, SKEWNESS & OUTLIERS")
+      add_l("%-20s %-16s %-16s %-7s %-12s", "Variable", "Mean (SD)", "Median [IQR]", "Skew", "Outliers")
+      add_l("--------------------------------------------------------------------------------")
+      for (i in seq_len(nrow(p$numeric))) {
+        nm <- p$numeric[i, ]
+        msd <- sprintf("%.1f (%.1f)", nm$Mean, nm$SD)
+        miqr <- sprintf("%.1f [%.1f]", nm$Median, nm$IQR)
+        out_str <- sprintf("%d (%.1f%%)", nm$Outliers_N, nm$Outliers_Pct)
+        add_l("%-20s %-16s %-16s %-7.2f %-12s",
+              substr(nm$Variable, 1, 19), msd, miqr, nm$Skewness, out_str)
+      }
       add_l("")
+    }
+    
+    # SECTION 5: CATEGORICAL DISTRIBUTIONS
+    if (nrow(p$categorical) > 0) {
+      add_box("SECTION 5: CATEGORICAL & DISCRETE DISTRIBUTIONS")
+      for (i in seq_len(nrow(p$categorical))) {
+        c_row <- p$categorical[i, ]
+        add_l("Variable: %s (Levels: %d)", c_row$Variable, c_row$Total_Levels)
+        add_l("  Distribution: %s", c_row$Top_Categories)
+        add_l("")
+      }
     }
   }
   
@@ -921,6 +1090,130 @@ generate_html_report <- function(file_name, p, df = NULL) {
     "<div style='color:#86868B; padding:16px;'>Insufficient numeric variables to compute correlation matrix.</div>"
   }
   
+  # Build FASTA database breakdown HTML (if FASTA format)
+  fasta_html <- if (isTRUE(p$is_fasta) && !is.null(p$fasta_db_counts)) {
+    db_c <- p$fasta_db_counts
+    db_rows <- paste(sapply(seq_len(nrow(db_c)), function(i) {
+      r <- db_c[i, ]
+      sprintf(
+        "<tr>
+           <td style='font-weight:600;'>%s</td>
+           <td style='text-align:right;'>%s</td>
+           <td style='text-align:right;'>%.2f%%</td>
+         </tr>",
+        r$Database, format(r$Sequences, big.mark = ","), r$Percentage
+      )
+    }), collapse = "\n")
+    
+    sprintf(
+      "<div class='card'>
+         <div class='card-title'>FASTA Sequence Database Breakdown</div>
+         <div style='overflow-x: auto;'>
+           <table>
+             <thead><tr><th>Database Source</th><th style='text-align:right;'>Sequences</th><th style='text-align:right;'>Percentage</th></tr></thead>
+             <tbody>%s</tbody>
+           </table>
+         </div>
+       </div>",
+      db_rows
+    )
+  } else {
+    ""
+  }
+  
+  # Assemble HTML sections based on data type (FASTA vs Tabular)
+  if (isTRUE(p$is_fasta)) {
+    db_cnt <- if (!is.null(p$fasta_db_counts)) nrow(p$fasta_db_counts) else 0
+    kpi_grid_html <- sprintf(
+      '<div class="kpi-grid">
+         <div class="kpi-card"><div class="kpi-label">Total Sequences (N)</div><div class="kpi-val">%s</div></div>
+         <div class="kpi-card"><div class="kpi-label">Databases</div><div class="kpi-val">%d</div></div>
+         <div class="kpi-card"><div class="kpi-label">Memory Footprint</div><div class="kpi-val">%s</div></div>
+       </div>',
+      format(p$rows, big.mark = ","), db_cnt, p$memory
+    )
+    body_cards_html <- fasta_html
+  } else {
+    kpi_grid_html <- sprintf(
+      '<div class="kpi-grid">
+         <div class="kpi-card"><div class="kpi-label">Observations (N)</div><div class="kpi-val">%s</div></div>
+         <div class="kpi-card"><div class="kpi-label">Variables (P)</div><div class="kpi-val">%s</div></div>
+         <div class="kpi-card"><div class="kpi-label">Memory Footprint</div><div class="kpi-val">%s</div></div>
+         <div class="kpi-card"><div class="kpi-label">Missing Cell Rate</div><div class="kpi-val">%.2f%%</div></div>
+         <div class="kpi-card"><div class="kpi-label">Duplicate Rows</div><div class="kpi-val">%s</div></div>
+       </div>',
+      format(p$rows, big.mark = ","), format(p$cols, big.mark = ","), p$memory, p$missing_rate, format(p$duplicates, big.mark = ",")
+    )
+    body_cards_html <- sprintf(
+      '<!-- Column Inventory Table with Missingness Bars -->
+    <div class="card">
+      <div class="card-title">Column Inventory &amp; Missingness</div>
+      <div style="overflow-x: auto;">
+        <table>
+          <thead>
+            <tr>
+              <th style="text-align:center;">#</th>
+              <th>Column Name</th>
+              <th>Data type</th>
+              <th>Missingness</th>
+              <th style="text-align:right;">Complete N</th>
+              <th style="text-align:right;">Distinct</th>
+              <th>Sample Value</th>
+            </tr>
+          </thead>
+          <tbody>%s</tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Numeric Distributions Table with Sparklines, Moments & Outliers (P2) -->
+    <div class="card">
+      <div class="card-title">Numeric Features, Distribution Sparklines &amp; Outliers</div>
+      <div style="overflow-x: auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Variable</th>
+              <th style="text-align:center; min-width:120px;">Distribution</th>
+              <th>Mean (SD)</th>
+              <th>Median [IQR]</th>
+              <th>Min</th>
+              <th>Max</th>
+              <th>Skewness</th>
+              <th>Outliers</th>
+            </tr>
+          </thead>
+          <tbody>%s</tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Categorical Breakdown Table -->
+    <div class="card">
+      <div class="card-title">Categorical &amp; Discrete Variables</div>
+      <div style="overflow-x: auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Variable</th>
+              <th style="text-align:center;">Total Levels</th>
+              <th>Frequency Breakdown (Top Levels)</th>
+            </tr>
+          </thead>
+          <tbody>%s</tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Correlation Matrix (P3) -->
+    <div class="card">
+      <div class="card-title">Correlation Matrix (Pearson)</div>
+      %s
+    </div>',
+      inv_rows, num_rows, cat_rows, cor_html
+    )
+  }
+  
   # Assemble complete standalone HTML
   app_logo_svg <- get_app_icon_svg()
   if (nzchar(app_logo_svg)) {
@@ -1028,79 +1321,10 @@ generate_html_report <- function(file_name, p, df = NULL) {
     </div>
 
     <!-- Overview KPIs -->
-    <div class="kpi-grid">
-      <div class="kpi-card"><div class="kpi-label">Observations (N)</div><div class="kpi-val">%s</div></div>
-      <div class="kpi-card"><div class="kpi-label">Variables (P)</div><div class="kpi-val">%s</div></div>
-      <div class="kpi-card"><div class="kpi-label">Memory Footprint</div><div class="kpi-val">%s</div></div>
-      <div class="kpi-card"><div class="kpi-label">Missing Cell Rate</div><div class="kpi-val">%.2f%%</div></div>
-      <div class="kpi-card"><div class="kpi-label">Duplicate Rows</div><div class="kpi-val">%s</div></div>
-    </div>
+    %s
 
-    <!-- Column Inventory Table with Missingness Bars -->
-    <div class="card">
-      <div class="card-title">Column Inventory &amp; Missingness</div>
-      <div style="overflow-x: auto;">
-        <table>
-          <thead>
-            <tr>
-              <th style="text-align:center;">#</th>
-              <th>Column Name</th>
-              <th>Data type</th>
-              <th>Missingness</th>
-              <th style="text-align:right;">Complete N</th>
-              <th style="text-align:right;">Distinct</th>
-              <th>Sample Value</th>
-            </tr>
-          </thead>
-          <tbody>%s</tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- Numeric Distributions Table with Sparklines, Moments & Outliers (P2) -->
-    <div class="card">
-      <div class="card-title">Numeric Features, Distribution Sparklines &amp; Outliers</div>
-      <div style="overflow-x: auto;">
-        <table>
-          <thead>
-            <tr>
-              <th>Variable</th>
-              <th style="text-align:center; min-width:120px;">Distribution</th>
-              <th>Mean (SD)</th>
-              <th>Median [IQR]</th>
-              <th>Min</th>
-              <th>Max</th>
-              <th>Skewness</th>
-              <th>Outliers</th>
-            </tr>
-          </thead>
-          <tbody>%s</tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- Categorical Breakdown Table -->
-    <div class="card">
-      <div class="card-title">Categorical &amp; Discrete Variables</div>
-      <div style="overflow-x: auto;">
-        <table>
-          <thead>
-            <tr>
-              <th>Variable</th>
-              <th style="text-align:center;">Total Levels</th>
-              <th>Frequency Breakdown (Top Levels)</th>
-            </tr>
-          </thead>
-          <tbody>%s</tbody>
-        </table>
-      </div>
-    </div>
-
-    <!-- Correlation Matrix (P3) -->
-    <div class="card">
-      <div class="card-title">Correlation Matrix (Pearson)</div>
-      %s
-    </div>
+    <!-- Report Body Cards -->
+    %s
 
     <div class="footer">
       SciDataView Report | Generated: %s | Standalone Offline HTML
@@ -1110,8 +1334,7 @@ generate_html_report <- function(file_name, p, df = NULL) {
 </html>',
     safe_name, app_logo_svg, safe_name, format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
     if (isTRUE(p$skip_rows > 0)) sprintf(" | Skipped %d title row(s)", p$skip_rows) else "",
-    format(p$rows, big.mark = ","), format(p$cols, big.mark = ","), p$memory, p$missing_rate, format(p$duplicates, big.mark = ","),
-    inv_rows, num_rows, cat_rows, cor_html,
+    kpi_grid_html, body_cards_html,
     format(Sys.time(), "%Y-%m-%d %H:%M:%S")
   )
 }
@@ -1241,6 +1464,89 @@ body {
   padding: 24px;
   color: var(--app-text);
   transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+/* Empty state vs active dataset view toggle */
+body:not(.has-dataset) .app-dataset-view {
+  display: none !important;
+}
+
+body.has-dataset .app-empty-view {
+  display: none !important;
+}
+
+/* Tabular data vs FASTA data view toggle */
+body.is-fasta .app-tabular-view {
+  display: none !important;
+}
+
+body:not(.is-fasta) .app-fasta-view {
+  display: none !important;
+}
+
+.fasta-summary-card {
+  background: var(--app-card);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-lg);
+  padding: 16px 20px;
+  margin-bottom: 20px;
+  box-shadow: var(--app-shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.fasta-badge-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.fasta-db-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: var(--app-radius-pill);
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid var(--app-border-strong);
+  background: var(--app-subbox-bg);
+  color: var(--app-text);
+}
+
+.fasta-db-badge.badge-sp {
+  background: rgba(0, 113, 227, 0.08);
+  border-color: rgba(0, 113, 227, 0.25);
+  color: #0071E3;
+}
+
+.fasta-db-badge.badge-tr {
+  background: rgba(255, 149, 0, 0.08);
+  border-color: rgba(255, 149, 0, 0.25);
+  color: #D97706;
+}
+
+[data-theme='dark'] .fasta-db-badge.badge-tr {
+  color: #F59E0B;
+}
+
+.fasta-db-badge.badge-other {
+  background: rgba(142, 142, 147, 0.08);
+  border-color: rgba(142, 142, 147, 0.25);
+  color: var(--app-text-secondary);
+}
+
+.fasta-count-pill {
+  font-weight: 700;
+  font-size: 13px;
+  font-feature-settings: 'tnum';
+}
+
+.fasta-pct-pill {
+  font-size: 11px;
+  opacity: 0.8;
 }
 
 .app-dropzone {
@@ -2161,12 +2467,21 @@ ui <- fluidPage(
               if (dropzone) {
                 dropzone.classList.remove('dragover', 'drag-active');
               }
+              document.body.classList.remove('has-dataset');
+              document.body.classList.remove('is-fasta');
             });
-            Shiny.addCustomMessageHandler('setDatasetState', function(hasData) {
+            Shiny.addCustomMessageHandler('setDatasetState', function(payload) {
+              var hasData = typeof payload === 'object' && payload !== null ? !!payload.hasData : !!payload;
+              var isFasta = typeof payload === 'object' && payload !== null ? !!payload.isFasta : false;
               if (hasData) {
                 document.body.classList.add('has-dataset');
               } else {
                 document.body.classList.remove('has-dataset');
+              }
+              if (isFasta) {
+                document.body.classList.add('is-fasta');
+              } else {
+                document.body.classList.remove('is-fasta');
               }
               setTimeout(syncIngestionHeight, 50);
             });
@@ -2235,7 +2550,7 @@ ui <- fluidPage(
             onclick = "$('#file_upload').click()",
             div(style = "font-size: 28px; color: #0071E3; margin-bottom: 8px;", icon("cloud-arrow-up")),
             div(style = "font-size: 13px; font-weight: 600; color: var(--app-text);", "Choose a data file"),
-            div(style = "font-size: 11px; color: #86868B; margin-top: 4px;", "Drag & drop or browse (CSV, Parquet, Feather, Arrow, FST, QS, Excel, etc.)")
+            div(style = "font-size: 11px; color: #86868B; margin-top: 4px;", "Drag & drop or browse (CSV, Parquet, Feather, Arrow, FST, QS, Excel, FASTA, etc.)")
           ),
           
           # Hidden raw input (accepts all extensions, fallback to fread)
@@ -2277,97 +2592,123 @@ ui <- fluidPage(
       column(
         width = 9,
         
-        # 5 Metric KPI Cards
+        # 1. Empty State View (Shown ONLY when no dataset is loaded)
         div(
-          class = "app-kpi-grid",
-          div(
-            class = "app-kpi-card",
-            div(class = "app-kpi-label", "Observations"),
-            h3(class = "app-kpi-val", textOutput("kpi_rows", inline = TRUE)),
-            div(class = "app-kpi-sub", "Total records (N)")
-          ),
-          div(
-            class = "app-kpi-card",
-            div(class = "app-kpi-label", "Variables"),
-            h3(class = "app-kpi-val", textOutput("kpi_cols", inline = TRUE)),
-            div(class = "app-kpi-sub", "Feature columns (P)")
-          ),
-          div(
-            class = "app-kpi-card",
-            div(class = "app-kpi-label", "Memory"),
-            h3(class = "app-kpi-val", textOutput("kpi_memory", inline = TRUE)),
-            div(class = "app-kpi-sub", "In-RAM footprint")
-          ),
-          div(
-            class = "app-kpi-card",
-            div(class = "app-kpi-label", "Missingness"),
-            h3(class = "app-kpi-val", textOutput("kpi_missing", inline = TRUE)),
-            div(class = "app-kpi-sub", "Unrecorded cells")
-          ),
-          div(
-            class = "app-kpi-card",
-            div(class = "app-kpi-label", "Duplicates"),
-            h3(class = "app-kpi-val", textOutput("kpi_dups", inline = TRUE)),
-            div(class = "app-kpi-sub", "Exact identical rows")
-          )
+          class = "app-card app-empty-view",
+          style = "padding: 80px 24px; text-align: center; color: #86868B;",
+          div(style = "font-size: 48px; color: #0071E3; margin-bottom: 16px;", icon("file-lines")),
+          div(style = "font-size: 18px; font-weight: 600; color: var(--app-text); margin-bottom: 8px;", "No Dataset Loaded"),
+          div(style = "font-size: 13px; max-width: 520px; margin: 0 auto; line-height: 1.6; color: var(--app-text-secondary);", 
+              "Upload or drag & drop any data file (CSV, Parquet, Feather, Arrow, FST, QS, Excel, FASTA, etc.) on the left sidebar to generate the interactive profile and summary.")
         ),
         
-        # Segmented Control Tabs
+        # 2. Active Dataset View (Shown ONLY when dataset is loaded)
         div(
-          class = "app-card",
-          tabsetPanel(
-            id = "app_tabs",
-            tabPanel(
-              title = "Column Inventory",
-              div(style = "margin-top: 18px;",
-                  uiOutput("ui_type_override_bar"),
-                  uiOutput("ui_html_inventory"))
-            ),
-            tabPanel(
-              title = "Numeric Distributions",
-              div(style = "margin-top: 18px;",
-                  uiOutput("ui_html_numeric"))
-            ),
-            tabPanel(
-              title = "Categorical Breakdown",
-              div(style = "margin-top: 18px;",
-                  uiOutput("ui_html_categorical"))
-            ),
-            tabPanel(
-              title = "Correlation Matrix (Pearson)",
-              div(style = "margin-top: 18px;",
-                  uiOutput("ui_html_correlation"),
-                  uiOutput("ui_bivariate_scatter"))
-            ),
-            tabPanel(
-              title = "Data Inspector",
+          class = "app-dataset-view",
+          
+          # FASTA View (Shown ONLY when dataset is FASTA)
+          div(
+            class = "app-fasta-view",
+            uiOutput("ui_fasta_view")
+          ),
+          
+          # Tabular View (Shown ONLY when dataset is tabular: CSV, Excel, Parquet, etc.)
+          div(
+            class = "app-tabular-view",
+            
+            # 5 Metric KPI Cards
+            div(
+              class = "app-kpi-grid",
               div(
-                style = "margin-top: 18px;",
-                div(
-                  class = "inspect-toolbar",
-                  div(
-                    style = "display: flex; align-items: center; gap: 10px; flex-wrap: wrap;",
-                    div(
-                      class = "inspect-search-wrap",
-                      tags$svg(
-                        class = "inspect-search-icon", viewBox = "0 0 24 24", fill = "none",
-                        stroke = "currentColor", strokeWidth = "2.2", strokeLinecap = "round", strokeLinejoin = "round",
-                        tags$circle(cx = "11", cy = "11", r = "8"),
-                        tags$line(x1 = "21", y1 = "21", x2 = "16.65", y2 = "16.65")
-                      ),
-                      textInput("tbl_search", NULL, placeholder = "Search all rows & columns...", width = "100%")
-                    ),
-                    uiOutput("ui_inspect_pagination")
-                  ),
-                  div(style = "font-size: 12px; color: var(--app-text-secondary);", textOutput("inspector_status", inline = TRUE))
-                ),
-                div(class = "app-table-wrap", tableOutput("tbl_preview"))
+                class = "app-kpi-card",
+                div(class = "app-kpi-label", "Observations"),
+                h3(class = "app-kpi-val", textOutput("kpi_rows", inline = TRUE)),
+                div(class = "app-kpi-sub", "Total records (N)")
+              ),
+              div(
+                class = "app-kpi-card",
+                div(class = "app-kpi-label", "Variables"),
+                h3(class = "app-kpi-val", textOutput("kpi_cols", inline = TRUE)),
+                div(class = "app-kpi-sub", "Feature columns (P)")
+              ),
+              div(
+                class = "app-kpi-card",
+                div(class = "app-kpi-label", "Memory"),
+                h3(class = "app-kpi-val", textOutput("kpi_memory", inline = TRUE)),
+                div(class = "app-kpi-sub", "In-RAM footprint")
+              ),
+              div(
+                class = "app-kpi-card",
+                div(class = "app-kpi-label", "Missingness"),
+                h3(class = "app-kpi-val", textOutput("kpi_missing", inline = TRUE)),
+                div(class = "app-kpi-sub", "Unrecorded cells")
+              ),
+              div(
+                class = "app-kpi-card",
+                div(class = "app-kpi-label", "Duplicates"),
+                h3(class = "app-kpi-val", textOutput("kpi_dups", inline = TRUE)),
+                div(class = "app-kpi-sub", "Exact identical rows")
               )
             ),
-            tabPanel(
-              title = "Text Report View",
-              div(style = "margin-top: 18px;",
-                  verbatimTextOutput("tbl_report_text"))
+            
+            # Segmented Control Tabs
+            div(
+              class = "app-card",
+              tabsetPanel(
+                id = "app_tabs",
+                tabPanel(
+                  title = "Column Inventory",
+                  div(style = "margin-top: 18px;",
+                      uiOutput("ui_type_override_bar"),
+                      uiOutput("ui_html_inventory"))
+                ),
+                tabPanel(
+                  title = "Numeric Distributions",
+                  div(style = "margin-top: 18px;",
+                      uiOutput("ui_html_numeric"))
+                ),
+                tabPanel(
+                  title = "Categorical Breakdown",
+                  div(style = "margin-top: 18px;",
+                      uiOutput("ui_html_categorical"))
+                ),
+                tabPanel(
+                  title = "Correlation Matrix (Pearson)",
+                  div(style = "margin-top: 18px;",
+                      uiOutput("ui_html_correlation"),
+                      uiOutput("ui_bivariate_scatter"))
+                ),
+                tabPanel(
+                  title = "Data Inspector",
+                  div(
+                    style = "margin-top: 18px;",
+                    div(
+                      class = "inspect-toolbar",
+                      div(
+                        style = "display: flex; align-items: center; gap: 10px; flex-wrap: wrap;",
+                        div(
+                          class = "inspect-search-wrap",
+                          tags$svg(
+                            class = "inspect-search-icon", viewBox = "0 0 24 24", fill = "none",
+                            stroke = "currentColor", strokeWidth = "2.2", strokeLinecap = "round", strokeLinejoin = "round",
+                            tags$circle(cx = "11", cy = "11", r = "8"),
+                            tags$line(x1 = "21", y1 = "21", x2 = "16.65", y2 = "16.65")
+                          ),
+                          textInput("tbl_search", NULL, placeholder = "Search all rows & columns...", width = "100%")
+                        ),
+                        uiOutput("ui_inspect_pagination")
+                      ),
+                      div(style = "font-size: 12px; color: var(--app-text-secondary);", textOutput("inspector_status", inline = TRUE))
+                    ),
+                    div(class = "app-table-wrap", tableOutput("tbl_preview"))
+                  )
+                ),
+                tabPanel(
+                  title = "Text Report View",
+                  div(style = "margin-top: 18px;",
+                      verbatimTextOutput("tbl_report_text"))
+                )
+              )
             )
           )
         )
@@ -2406,9 +2747,11 @@ server <- function(input, output, session) {
     inv_sort_dir      = "asc"
   )
   
-  # Broadcast dataset state to client DOM for adaptive sidebar sizing
+  # Broadcast dataset state to client DOM for adaptive sidebar sizing and fasta view toggle
   observe({
-    session$sendCustomMessage("setDatasetState", !is.null(rv$raw_df))
+    has_data <- !is.null(rv$raw_df)
+    is_fa    <- isTRUE(attr(rv$raw_df, "is_fasta"))
+    session$sendCustomMessage("setDatasetState", list(hasData = has_data, isFasta = is_fa))
   })
   
   # Dynamic Excel sheet selector (matching Change Data Type UI)
@@ -2466,12 +2809,13 @@ server <- function(input, output, session) {
   # Dynamic title row skip selector (matching Change Data Type UI)
   output$ui_skip_selector <- renderUI({
     req(input$file_upload, rv$raw_df)
-    ext <- tolower(tools::file_ext(input$file_upload$name))
-    if (ext %in% c("parquet", "feather", "arrow", "fst", "qs", "qs2", "rds", "dta", "sav", "sas7bdat")) {
+    ext <- tolower(tools::file_ext(input$file_upload$name[1]))
+    if (ext %in% c("parquet", "feather", "arrow", "fst", "qs", "qs2", "rds", "dta", "sav", "sas7bdat",
+                   "fasta", "fa", "faa", "fna", "fas") || isTRUE(attr(rv$raw_df, "is_fasta"))) {
       return(NULL)
     }
     sheet_sel <- if (!is.null(rv$current_sheet)) rv$current_sheet else 1
-    detected  <- detect_title_skip(input$file_upload$datapath, ext = ext, sheet = sheet_sel)
+    detected  <- detect_title_skip(input$file_upload$datapath[1], ext = ext, sheet = sheet_sel)
     
     current_val <- if (!is.null(rv$skip_rows)) rv$skip_rows else detected
     
@@ -2509,6 +2853,156 @@ server <- function(input, output, session) {
         )
       )
     )
+  })
+  
+  # Dedicated FASTA View (KPIs & Database Breakdown)
+  output$ui_fasta_view <- renderUI({
+    req(rv$raw_df)
+    if (!isTRUE(attr(rv$raw_df, "is_fasta"))) return(NULL)
+    db_counts <- attr(rv$raw_df, "fasta_db_counts")
+    if (is.null(db_counts) || nrow(db_counts) == 0) return(NULL)
+    
+    total_seqs <- sum(db_counts$Sequences)
+    lens <- rv$raw_df$Length
+    lens_c <- lens[!is.na(lens)]
+    avg_len <- if (length(lens_c) > 0) round(mean(lens_c), 1) else 0
+    min_len <- if (length(lens_c) > 0) min(lens_c) else 0
+    max_len <- if (length(lens_c) > 0) max(lens_c) else 0
+    mem_str <- format(object.size(rv$raw_df), units = "auto")
+    
+    # 1. FASTA KPI Grid
+    kpi_grid <- div(
+      class = "app-kpi-grid",
+      div(
+        class = "app-kpi-card",
+        div(class = "app-kpi-label", "Total Sequences"),
+        h3(class = "app-kpi-val", format(total_seqs, big.mark = ",")),
+        div(class = "app-kpi-sub", "FASTA records (N)")
+      ),
+      div(
+        class = "app-kpi-card",
+        div(class = "app-kpi-label", "Databases"),
+        h3(class = "app-kpi-val", format(nrow(db_counts), big.mark = ",")),
+        div(class = "app-kpi-sub", "Distinct source databases")
+      ),
+      div(
+        class = "app-kpi-card",
+        div(class = "app-kpi-label", "Memory"),
+        h3(class = "app-kpi-val", mem_str),
+        div(class = "app-kpi-sub", "In-RAM footprint")
+      ),
+      div(
+        class = "app-kpi-card",
+        div(class = "app-kpi-label", "Average Length"),
+        h3(class = "app-kpi-val", sprintf("%s aa", format(avg_len, big.mark = ","))),
+        div(class = "app-kpi-sub", "Mean sequence length")
+      ),
+      div(
+        class = "app-kpi-card",
+        div(class = "app-kpi-label", "Length Range"),
+        h3(class = "app-kpi-val", sprintf("%s - %s", format(min_len, big.mark = ","), format(max_len, big.mark = ","))),
+        div(class = "app-kpi-sub", "Min - Max sequence length")
+      )
+    )
+    
+    # 2. Database Badges
+    badges <- lapply(seq_len(nrow(db_counts)), function(i) {
+      row <- db_counts[i, ]
+      db_nm <- row$Database
+      badge_class <- if (grepl("^sp\\b", db_nm)) {
+        "fasta-db-badge badge-sp"
+      } else if (grepl("^tr\\b", db_nm)) {
+        "fasta-db-badge badge-tr"
+      } else {
+        "fasta-db-badge badge-other"
+      }
+      
+      div(
+        class = badge_class,
+        tags$span(style = "font-weight: 600;", db_nm),
+        tags$span(class = "fasta-count-pill", format(row$Sequences, big.mark = ",")),
+        tags$span(class = "fasta-pct-pill", sprintf("(%.1f%%)", row$Percentage))
+      )
+    })
+    
+    # 3. Database Table Rows
+    table_rows <- lapply(seq_len(nrow(db_counts)), function(i) {
+      row <- db_counts[i, ]
+      pct <- row$Percentage
+      bar_color <- if (grepl("^sp\\b", row$Database)) "#0071E3" else if (grepl("^tr\\b", row$Database)) "#FF9500" else "#8E8E93"
+      
+      tags$tr(
+        tags$td(
+          style = "font-weight: 600; padding: 12px 16px; font-size: 13px;",
+          row$Database
+        ),
+        tags$td(
+          style = "text-align: right; padding: 12px 16px; font-weight: 600; font-feature-settings: 'tnum';",
+          format(row$Sequences, big.mark = ",")
+        ),
+        tags$td(
+          style = "text-align: right; padding: 12px 16px; font-weight: 600; font-feature-settings: 'tnum';",
+          sprintf("%.2f%%", pct)
+        ),
+        tags$td(
+          style = "padding: 12px 16px; min-width: 140px; width: 35%;",
+          div(
+            style = "height: 8px; width: 100%; background: var(--app-bar-track); border-radius: 980px; overflow: hidden;",
+            div(style = sprintf("height: 100%%; width: %.1f%%; background: %s; border-radius: 980px;", max(1, pct), bar_color))
+          )
+        )
+      )
+    })
+    
+    breakdown_card <- div(
+      class = "app-card",
+      div(
+        style = "display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 16px;",
+        div(
+          style = "display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; color: var(--app-text);",
+          tags$svg(
+            width = "18", height = "18", viewBox = "0 0 24 24", fill = "none",
+            stroke = "currentColor", strokeWidth = "2", strokeLinecap = "round", strokeLinejoin = "round",
+            style = "color: var(--app-blue);",
+            tags$path(d = "M12 2v20"),
+            tags$path(d = "M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6")
+          ),
+          tags$span("FASTA Database Sequence Breakdown")
+        ),
+        div(
+          style = "display: flex; gap: 8px; align-items: center;",
+          tags$span(
+            style = "font-size: 11px; font-weight: 600; background: var(--app-blue-soft); color: var(--app-blue); padding: 3px 10px; border-radius: 980px;",
+            sprintf("%s Sequences Total", format(total_seqs, big.mark = ","))
+          )
+        )
+      ),
+      
+      div(
+        class = "fasta-badge-grid",
+        style = "margin-bottom: 20px;",
+        badges
+      ),
+      
+      div(
+        class = "app-table-wrap",
+        tags$table(
+          class = "table app-table",
+          style = "width: 100%; margin-bottom: 0;",
+          tags$thead(
+            tags$tr(
+              tags$th(style = "text-align: left; padding: 10px 16px; font-size: 11px; text-transform: uppercase; color: var(--app-table-th-text);", "Database Source"),
+              tags$th(style = "text-align: right; padding: 10px 16px; font-size: 11px; text-transform: uppercase; color: var(--app-table-th-text);", "Sequences"),
+              tags$th(style = "text-align: right; padding: 10px 16px; font-size: 11px; text-transform: uppercase; color: var(--app-table-th-text);", "Percentage"),
+              tags$th(style = "text-align: left; padding: 10px 16px; font-size: 11px; text-transform: uppercase; color: var(--app-table-th-text);", "Proportion")
+            )
+          ),
+          tags$tbody(table_rows)
+        )
+      )
+    )
+    
+    tagList(kpi_grid, breakdown_card)
   })
   
   # Core helper to ingest and profile dataset
@@ -2653,9 +3147,24 @@ server <- function(input, output, session) {
     if (is.null(rv$file_name)) {
       div("No file loaded. Drop a table to begin profiling.")
     } else {
+      is_fa <- isTRUE(attr(rv$raw_df, "is_fasta"))
+      db_counts <- attr(rv$raw_df, "fasta_db_counts")
+      
       div(
         div(style = "font-weight: 600; color: var(--app-text); margin-bottom: 2px;", rv$file_name),
-        div(sprintf("Format: %s", toupper(tools::file_ext(rv$file_name)))),
+        div(sprintf("Format: %s", if (is_fa) "FASTA Sequence" else toupper(tools::file_ext(rv$file_name)))),
+        if (is_fa && !is.null(db_counts)) {
+          tagList(
+            div(style = "font-size: 11px; color: var(--app-text); margin-top: 6px; font-weight: 600;",
+                sprintf("Databases (%d):", nrow(db_counts))),
+            tags$ul(
+              style = "margin: 4px 0 0 16px; padding: 0; font-size: 11px; line-height: 1.4;",
+              lapply(seq_len(nrow(db_counts)), function(i) {
+                tags$li(sprintf("%s: %s (%.1f%%)", db_counts$Database[i], format(db_counts$Sequences[i], big.mark = ","), db_counts$Percentage[i]))
+              })
+            )
+          )
+        },
         if (isTRUE(rv$skip_rows > 0)) {
           div(style = "color: #0071E3; font-weight: 500; font-size: 11px; margin-top: 4px;",
               sprintf("Header at row %d (Skipped %d title rows)", rv$skip_rows + 1, rv$skip_rows))
@@ -2848,15 +3357,7 @@ server <- function(input, output, session) {
   
   # Tab 1: Column Inventory (with Missingness header, bar & interactive column sorting)
   output$ui_html_inventory <- renderUI({
-    if (is.null(rv$profile)) {
-      return(div(
-        style = "padding: 56px 20px; text-align: center; color: #86868B;",
-        div(style = "font-size: 40px; color: #0071E3; margin-bottom: 14px;", icon("file-csv")),
-        div(style = "font-size: 16px; font-weight: 600; color: var(--app-text); margin-bottom: 6px;", "No Dataset Loaded"),
-        div(style = "font-size: 13px; max-width: 500px; margin: 0 auto; line-height: 1.5;", 
-            "Upload or drag & drop any tabular file (CSV, Parquet, Feather, Arrow, FST, QS, Excel, Stata, SPSS, etc.) on the left sidebar to generate the data profile.")
-      ))
-    }
+    if (is.null(rv$profile)) return(NULL)
     inv <- rv$profile$inventory
     
     # Sort inventory by active column & direction
