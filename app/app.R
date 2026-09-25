@@ -308,22 +308,74 @@ read_any_table <- function(file_path, file_name = NULL, sheet = 1, skip = "auto"
         as.data.frame(haven::read_sas(file_path))
       },
       "parquet"  = {
-        if (requireNamespace("arrow", quietly = TRUE)) {
-          ds <- arrow::open_dataset(file_path)
-          total_rows <- nrow(ds)
-          if (total_rows > 3000000L) {
-            res <- as.data.frame(head(ds, 100000L))
-            attr(res, "full_n_rows") <- total_rows
-            attr(res, "is_sampled")  <- TRUE
-            res
-          } else {
-            as.data.frame(arrow::read_parquet(file_path))
+        read_pq <- function(fp) {
+          # 1. Try Apache Arrow (Desktop / High Performance)
+          if (requireNamespace("arrow", quietly = TRUE)) {
+            res <- tryCatch({
+              ds <- arrow::open_dataset(fp)
+              total_rows <- tryCatch(nrow(ds), error = function(e) NA_integer_)
+              if (!is.na(total_rows) && length(total_rows) == 1 && total_rows > 3000000L) {
+                out <- as.data.frame(head(ds, 100000L))
+                attr(out, "full_n_rows") <- total_rows
+                attr(out, "is_sampled")  <- TRUE
+                out
+              } else {
+                as.data.frame(arrow::read_parquet(fp))
+              }
+            }, error = function(e) NULL)
+            if (is.data.frame(res) && ncol(res) > 0) return(res)
           }
-        } else if (requireNamespace("nanoparquet", quietly = TRUE)) {
-          as.data.frame(nanoparquet::read_parquet(file_path))
-        } else {
-          stop("Package 'nanoparquet' or 'arrow' is required to read Parquet (.parquet) files.")
+
+          # 2. Try DuckDB if available
+          if (requireNamespace("duckdb", quietly = TRUE) && requireNamespace("DBI", quietly = TRUE)) {
+            res <- tryCatch({
+              con <- DBI::dbConnect(duckdb::duckdb())
+              on.exit(try(DBI::dbDisconnect(con, shutdown = TRUE), silent = TRUE), add = TRUE)
+              safe_fp <- gsub("'", "''", normalizePath(fp, winslash = "/", mustWork = FALSE))
+              DBI::dbGetQuery(con, sprintf("SELECT * FROM read_parquet('%s')", safe_fp))
+            }, error = function(e) NULL)
+            if (is.data.frame(res) && ncol(res) > 0) return(res)
+          }
+
+          # 3. Try nanoparquet (WebAssembly / webR / Lightweight)
+          if (requireNamespace("nanoparquet", quietly = TRUE)) {
+            # 3a. Standard read
+            res <- tryCatch(as.data.frame(nanoparquet::read_parquet(fp)), error = function(e) NULL)
+            if (is.data.frame(res) && ncol(res) > 0) return(res)
+
+            # 3b. Read without Arrow metadata (bypasses arrow_schema parsing length-zero bug)
+            res <- tryCatch({
+              opts <- nanoparquet::parquet_options(use_arrow_metadata = FALSE)
+              as.data.frame(nanoparquet::read_parquet(fp, options = opts))
+            }, error = function(e) NULL)
+            if (is.data.frame(res) && ncol(res) > 0) return(res)
+
+            # 3c. Direct C++ extraction (bypasses post_process_read_result bug in webR / v0.5.1)
+            res <- tryCatch({
+              opts <- nanoparquet::parquet_options(use_arrow_metadata = FALSE)
+              fn <- get("nanoparquet_read2", asNamespace("nanoparquet"))
+              raw <- .Call(fn, path.expand(fp), opts, NULL, sys.call())
+              if (is.list(raw) && length(raw) >= 1 && is.data.frame(raw[[1]])) {
+                df <- as.data.frame(raw[[1]])
+                for (j in seq_along(df)) {
+                  if (inherits(df[[j]], "POSIXct") || inherits(df[[j]], "hms")) {
+                    val <- unclass(df[[j]])
+                    if (is.numeric(val) && length(val) > 0 && suppressWarnings(max(val, na.rm = TRUE)) > 1e11) {
+                      df[[j]] <- structure(val / 1000, class = class(df[[j]]))
+                    }
+                  }
+                }
+                df
+              } else {
+                NULL
+              }
+            }, error = function(e) NULL)
+            if (is.data.frame(res) && ncol(res) > 0) return(res)
+          }
+
+          stop("Unable to parse Parquet file with available readers (arrow, duckdb, nanoparquet).")
         }
+        read_pq(file_path)
       },
       "feather"  = {
         if (!requireNamespace("arrow", quietly = TRUE)) stop("Package 'arrow' is required to read Feather (.feather) files.")
@@ -375,14 +427,16 @@ read_any_table <- function(file_path, file_name = NULL, sheet = 1, skip = "auto"
       }
     )
   }, error = function(e) {
+    display_name <- if (!is.null(file_name) && nzchar(file_name)) file_name else basename(file_path)
     stop(sprintf("Failed to read file '%s'%s: %s",
-                 basename(file_path),
+                 display_name,
                  if (nzchar(ext)) paste0(" (format .", ext, ")") else "",
                  e$message))
   })
   
   if (!is.data.frame(res) || ncol(res) == 0) {
-    stop(sprintf("File '%s' was read but contains no valid tabular data or columns.", basename(file_path)))
+    display_name <- if (!is.null(file_name) && nzchar(file_name)) file_name else basename(file_path)
+    stop(sprintf("File '%s' was read but contains no valid tabular data or columns.", display_name))
   }
   
   attr(res, "skip_rows") <- skip_n
@@ -3383,8 +3437,12 @@ server <- function(input, output, session) {
         
         setProgress(value = 1.0, message = "Complete!")
       }, error = function(e) {
+        msg <- e$message
+        if (!startsWith(msg, "Failed to read file")) {
+          msg <- paste("Failed to read file:", msg)
+        }
         showNotification(
-          paste("Failed to read file:", e$message),
+          msg,
           type = "error",
           duration = 8
         )
