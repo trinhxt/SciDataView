@@ -20,8 +20,6 @@ required_packages <- c(
 optional_packages <- c(
   "haven",
   "arrow",
-  "duckdb",
-  "DBI",
   "fst",
   "qs",
   "qs2"
