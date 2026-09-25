@@ -115,12 +115,35 @@ parse_fasta_file <- function(file_path, max_lines = -1) {
     stop("The FASTA file is empty.")
   }
   
+  # Strip whitespace and eliminate all empty / blank lines anywhere in file
+  lines <- trimws(lines)
+  lines <- lines[nzchar(lines)]
+  
+  if (length(lines) == 0) {
+    stop("The FASTA file contains no data (only blank lines).")
+  }
+  
+  # Drop any malformed / empty header lines (lone '>' or '> ' with no identifier)
+  empty_gt <- startsWith(lines, ">") & !nzchar(trimws(substring(lines, 2)))
+  if (any(empty_gt)) {
+    lines <- lines[!empty_gt]
+  }
+  
+  # A valid FASTA header MUST start with '>' and contain an identifier
   is_header <- startsWith(lines, ">")
   if (!any(is_header)) {
-    stop("No FASTA headers (lines starting with '>') found in file.")
+    stop("No valid FASTA headers (lines starting with '>' and containing an identifier) found in file.")
   }
   
   header_idx <- which(is_header)
+  
+  # If there are leading non-header lines before first '>', ignore them
+  if (header_idx[1] > 1) {
+    lines <- lines[header_idx[1]:length(lines)]
+    is_header <- startsWith(lines, ">")
+    header_idx <- which(is_header)
+  }
+  
   n_seqs <- length(header_idx)
   headers <- lines[header_idx]
   
@@ -131,11 +154,12 @@ parse_fasta_file <- function(file_path, max_lines = -1) {
   
   seqs <- character(n_seqs)
   if (length(non_h) > 0) {
-    agg <- tapply(non_h, non_h_id, paste, collapse = "")
+    non_h_clean <- gsub("[[:space:]]+", "", non_h)
+    agg <- tapply(non_h_clean, non_h_id, paste, collapse = "")
     seqs[as.integer(names(agg))] <- unname(agg)
   }
   
-  clean_h <- sub("^>\\s*", "", headers)
+  clean_h <- trimws(substring(headers, 2))
   
   # Check for pipe-delimited format (UniProt / NCBI / PDB: >db|accession|entry_name description)
   has_pipe <- grepl("^[a-zA-Z0-9_-]+\\|", clean_h)
@@ -150,36 +174,40 @@ parse_fasta_file <- function(file_path, max_lines = -1) {
   if (any(has_pipe)) {
     p_h <- clean_h[has_pipe]
     raw_db <- sub("^([a-zA-Z0-9_-]+)\\|.*", "\\1", p_h)
-    db_clean <- tolower(raw_db)
+    db_clean <- tolower(trimws(raw_db))
     
     # Map common DB codes
     db_label <- ifelse(db_clean == "sp", "sp (Swiss-Prot)",
                 ifelse(db_clean == "tr", "tr (TrEMBL)",
                 ifelse(db_clean == "pdb", "pdb (PDB)",
                 ifelse(db_clean == "ref", "ref (RefSeq)",
-                ifelse(db_clean == "iso", "iso (Isoform)", paste0(raw_db, " (custom)"))))))
+                ifelse(db_clean == "iso", "iso (Isoform)",
+                ifelse(nzchar(raw_db), paste0(raw_db, " (custom)"), "other"))))))
     db_code[has_pipe] <- db_label
     
     p_rest <- sub("^[a-zA-Z0-9_-]+\\|", "", p_h)
     p_acc <- sub("\\|.*", "", p_rest)
-    acc[has_pipe] <- p_acc
+    acc[has_pipe] <- trimws(p_acc)
     
     p_after_acc <- sub("^[^\\|]*\\|", "", p_rest)
     entry_part <- sub("[[:space:]]+.*", "", p_after_acc)
-    entry_name[has_pipe] <- entry_part
+    entry_name[has_pipe] <- trimws(entry_part)
     
     desc_part <- sub("^[^[:space:]]+[[:space:]]*", "", p_after_acc)
-    desc[has_pipe] <- desc_part
+    desc[has_pipe] <- trimws(desc_part)
   }
   
   if (any(!has_pipe)) {
     np_h <- clean_h[!has_pipe]
     first_tok <- sub("[[:space:]]+.*", "", np_h)
     rest_tok <- sub("^[^[:space:]]+[[:space:]]*", "", np_h)
-    acc[!has_pipe] <- first_tok
-    entry_name[!has_pipe] <- first_tok
-    desc[!has_pipe] <- rest_tok
+    acc[!has_pipe] <- trimws(first_tok)
+    entry_name[!has_pipe] <- trimws(first_tok)
+    desc[!has_pipe] <- trimws(rest_tok)
   }
+  
+  acc <- ifelse(nzchar(acc), acc, paste0("seq_", seq_len(n_seqs)))
+  db_code <- ifelse(is.na(db_code) | !nzchar(trimws(db_code)), "other", trimws(db_code))
   
   # Extract Organism (OS=...) and Gene (GN=...) if present (standard UniProt metadata)
   has_os <- grepl("OS=", desc)
@@ -223,12 +251,12 @@ parse_fasta_file <- function(file_path, max_lines = -1) {
 }
 
 # Universal reader supporting all tabular data formats (with auto title skip, FASTA and fread fallback)
-read_any_table <- function(file_path, sheet = 1, skip = "auto") {
+read_any_table <- function(file_path, file_name = NULL, sheet = 1, skip = "auto") {
   if (!file.exists(file_path)) {
     stop(sprintf("File does not exist: %s", file_path))
   }
   
-  ext <- tolower(tools::file_ext(file_path))
+  ext <- tolower(tools::file_ext(if (!is.null(file_name) && nzchar(file_name)) file_name else file_path))
   
   skip_n <- if (identical(skip, "auto") || is.null(skip)) {
     detect_title_skip(file_path, ext = ext, sheet = sheet)
@@ -3022,7 +3050,7 @@ server <- function(input, output, session) {
     
     withProgress(message = "Reading dataset...", detail = "Please wait", value = 0.3, {
       tryCatch({
-        df <- read_any_table(file_path, sheet = sheet_sel, skip = skip_sel)
+        df <- read_any_table(file_path, file_name = file_name, sheet = sheet_sel, skip = skip_sel)
         skip_actual <- attr(df, "skip_rows")
         rv$skip_rows <- if (!is.null(skip_actual)) skip_actual else 0
         
