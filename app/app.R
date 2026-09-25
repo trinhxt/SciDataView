@@ -2439,11 +2439,10 @@ html.shiny-busy .app-busy-indicator {
   pointer-events: auto !important;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif !important;
   -webkit-font-smoothing: antialiased !important;
-  background: rgba(255, 255, 255, 0.82) !important;
+  background: rgba(255, 255, 255, 0.88) !important;
   backdrop-filter: saturate(180%) blur(20px) !important;
   -webkit-backdrop-filter: saturate(180%) blur(20px) !important;
-  border: 1px solid rgba(255, 255, 255, 0.6) !important;
-  border-left: 4px solid var(--app-blue) !important;
+  border: 1px solid rgba(0, 0, 0, 0.08) !important;
   border-radius: 14px !important;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.6) !important;
   color: var(--app-text) !important;
@@ -2457,25 +2456,28 @@ html.shiny-busy .app-busy-indicator {
 }
 
 [data-theme='dark'] .shiny-notification {
-  background: rgba(28, 28, 30, 0.82) !important;
+  background: rgba(28, 28, 30, 0.88) !important;
   backdrop-filter: saturate(180%) blur(20px) !important;
   -webkit-backdrop-filter: saturate(180%) blur(20px) !important;
   border: 1px solid rgba(255, 255, 255, 0.12) !important;
-  border-left: 4px solid var(--app-blue) !important;
   box-shadow: 0 14px 40px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
   color: var(--app-text) !important;
 }
 
 .shiny-notification-warning {
-  border-left-color: #FF9500 !important;
+  border-left: 4px solid #FF9500 !important;
 }
 
 .shiny-notification-error {
-  border-left-color: #FF3B30 !important;
+  border-left: 4px solid #FF3B30 !important;
 }
 
 .shiny-notification-message {
-  border-left-color: var(--app-blue) !important;
+  border: 1px solid rgba(0, 0, 0, 0.08) !important;
+}
+
+[data-theme='dark'] .shiny-notification-message {
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
 }
 
 .shiny-notification-close {
@@ -3374,67 +3376,50 @@ server <- function(input, output, session) {
     file_path <- file_info$datapath[1]
     file_name <- file_info$name[1]
     
-    withProgress(message = "Reading dataset...", detail = "Please wait", value = 0.3, {
-      tryCatch({
-        df <- read_any_table(file_path, file_name = file_name, sheet = sheet_sel, skip = skip_sel)
-        skip_actual <- attr(df, "skip_rows")
-        rv$skip_rows <- if (!is.null(skip_actual)) skip_actual else 0
-        
-        # Smart Sampling threshold: if rows > 3,000,000, sample 100,000 rows
-        full_n <- attr(df, "full_n_rows")
-        if (is.null(full_n)) full_n <- nrow(df)
-        
-        if (nrow(df) > 3000000L) {
-          set.seed(42)
-          s_idx <- sort(sample.int(nrow(df), 100000L))
-          df <- df[s_idx, , drop = FALSE]
-          attr(df, "full_n_rows") <- full_n
-          attr(df, "is_sampled")  <- TRUE
-        }
-        
-        setProgress(value = 0.7, message = "Classifying columns & screening data...")
-        p <- profile_dataset(df, type_overrides = list(), lazy = TRUE)
-        
-        rv$original_df       <- df
-        rv$raw_df            <- df
-        rv$type_overrides    <- list()
-        rv$file_name         <- file_name
-        rv$file_path         <- file_path
-        rv$current_sheet     <- sheet_sel
-        rv$profile           <- p
-        rv$report_txt        <- NULL
-        rv$report_html       <- NULL
-        rv$selected_cor_pair <- NULL
-        rv$inspect_page      <- 1
-        rv$inv_sort_col      <- "Index"
-        rv$inv_sort_dir      <- "asc"
-        
-        if (isTRUE(rv$skip_rows > 0)) {
-          showNotification(sprintf("Auto-skipped %d title row(s). Header at row %d.", rv$skip_rows, rv$skip_rows + 1),
-                           type = "message", duration = 4)
-        }
-        
-        if (isTRUE(p$is_sampled)) {
-          showNotification(
-            sprintf("Large dataset (%s rows) — Sampled %s random rows for fast profiling.",
-                    format(p$full_rows, big.mark = ","),
-                    format(p$rows, big.mark = ",")),
-            type = "message", duration = 6
-          )
-        }
-        
-        setProgress(value = 1.0, message = "Complete!")
-      }, error = function(e) {
-        msg <- e$message
-        if (!startsWith(msg, "Failed to read file")) {
-          msg <- paste("Failed to read file:", msg)
-        }
-        showNotification(
-          msg,
-          type = "error",
-          duration = 8
-        )
-      })
+    tryCatch({
+      df <- read_any_table(file_path, file_name = file_name, sheet = sheet_sel, skip = skip_sel)
+      skip_actual <- attr(df, "skip_rows")
+      rv$skip_rows <- if (!is.null(skip_actual)) skip_actual else 0
+      
+      # Smart Sampling threshold: if rows > 3,000,000, sample 100,000 rows
+      full_n <- attr(df, "full_n_rows")
+      if (is.null(full_n)) full_n <- nrow(df)
+      
+      if (nrow(df) > 3000000L) {
+        set.seed(42)
+        s_idx <- sort(sample.int(nrow(df), 100000L))
+        df <- df[s_idx, , drop = FALSE]
+        attr(df, "full_n_rows") <- full_n
+        attr(df, "is_sampled")  <- TRUE
+      }
+      
+      p <- profile_dataset(df, type_overrides = list(), lazy = TRUE)
+      
+      rv$original_df       <- df
+      rv$raw_df            <- df
+      rv$type_overrides    <- list()
+      rv$file_name         <- file_name
+      rv$file_path         <- file_path
+      rv$current_sheet     <- sheet_sel
+      rv$profile           <- p
+      rv$report_txt        <- NULL
+      rv$report_html       <- NULL
+      rv$selected_cor_pair <- NULL
+      rv$inspect_page      <- 1
+      rv$inv_sort_col      <- "Index"
+      rv$inv_sort_dir      <- "asc"
+      
+      showNotification("Loaded", type = "message", duration = 3)
+    }, error = function(e) {
+      msg <- e$message
+      if (!startsWith(msg, "Failed to read file")) {
+        msg <- paste("Failed to read file:", msg)
+      }
+      showNotification(
+        msg,
+        type = "error",
+        duration = 8
+      )
     })
   }
   
