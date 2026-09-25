@@ -46,8 +46,15 @@ if (dir.exists(user_lib) && !(user_lib %in% .libPaths())) {
 
 # 3. Pre-flight package check & automatic dependency installation
 core_packages <- c(
-  "shiny", "httpuv", "bslib", "data.table", "readxl", "later", "nanoparquet"
+  "shiny", "httpuv", "bslib", "data.table", "readxl", "later"
 )
+
+# Parquet is supported if either arrow or nanoparquet is installed
+has_parquet <- requireNamespace("arrow", quietly = TRUE) || requireNamespace("nanoparquet", quietly = TRUE)
+if (!has_parquet) {
+  core_packages <- c(core_packages, "nanoparquet")
+}
+
 missing_packages <- core_packages[!vapply(core_packages, requireNamespace, logical(1), quietly = TRUE)]
 
 if (length(missing_packages) > 0) {
