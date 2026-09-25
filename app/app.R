@@ -308,21 +308,48 @@ read_any_table <- function(file_path, file_name = NULL, sheet = 1, skip = "auto"
         as.data.frame(haven::read_sas(file_path))
       },
       "parquet"  = {
-        if (requireNamespace("nanoparquet", quietly = TRUE)) {
+        if (requireNamespace("arrow", quietly = TRUE)) {
+          ds <- arrow::open_dataset(file_path)
+          total_rows <- nrow(ds)
+          if (total_rows > 3000000L) {
+            res <- as.data.frame(head(ds, 100000L))
+            attr(res, "full_n_rows") <- total_rows
+            attr(res, "is_sampled")  <- TRUE
+            res
+          } else {
+            as.data.frame(arrow::read_parquet(file_path))
+          }
+        } else if (requireNamespace("nanoparquet", quietly = TRUE)) {
           as.data.frame(nanoparquet::read_parquet(file_path))
-        } else if (requireNamespace("arrow", quietly = TRUE)) {
-          as.data.frame(arrow::read_parquet(file_path))
         } else {
           stop("Package 'nanoparquet' or 'arrow' is required to read Parquet (.parquet) files.")
         }
       },
       "feather"  = {
         if (!requireNamespace("arrow", quietly = TRUE)) stop("Package 'arrow' is required to read Feather (.feather) files.")
-        as.data.frame(arrow::read_feather(file_path))
+        tab <- arrow::read_feather(file_path, as_data_frame = FALSE)
+        if (tab$num_rows > 3000000L) {
+          total_rows <- tab$num_rows
+          res <- as.data.frame(head(tab, 100000L))
+          attr(res, "full_n_rows") <- total_rows
+          attr(res, "is_sampled")  <- TRUE
+          res
+        } else {
+          as.data.frame(tab)
+        }
       },
       "arrow"    = {
         if (!requireNamespace("arrow", quietly = TRUE)) stop("Package 'arrow' is required to read Arrow (.arrow) files.")
-        as.data.frame(arrow::read_ipc_file(file_path))
+        tab <- arrow::read_ipc_file(file_path, as_data_frame = FALSE)
+        if (tab$num_rows > 3000000L) {
+          total_rows <- tab$num_rows
+          res <- as.data.frame(head(tab, 100000L))
+          attr(res, "full_n_rows") <- total_rows
+          attr(res, "is_sampled")  <- TRUE
+          res
+        } else {
+          as.data.frame(tab)
+        }
       },
       "fst"      = as.data.frame(fst::read_fst(file_path)),
       "qs"       = as.data.frame(if (requireNamespace("qs2", quietly = TRUE)) qs2::qs_read(file_path) else qs::qread(file_path)),
@@ -365,6 +392,19 @@ read_any_table <- function(file_path, file_name = NULL, sheet = 1, skip = "auto"
 # ==============================================================================
 # 2. STATISTICAL ENGINE: MOMENTS, OUTLIERS & VISUALIZERS (PHASE P1 & P2)
 # ==============================================================================
+
+# Fast memory footprint calculator (O(1) sampling avoids recursive object.size freeze on large tables)
+format_fast_memory_size <- function(df) {
+  if (!is.data.frame(df) || nrow(df) == 0) return("0 B")
+  nr <- nrow(df)
+  if (nr <= 10000L) {
+    return(format(object.size(df), units = "auto"))
+  }
+  sample_n <- min(1000L, nr)
+  sub_sz <- as.numeric(object.size(head(df, sample_n)))
+  est_bytes <- (sub_sz / sample_n) * nr
+  format(structure(est_bytes, class = "object_size"), units = "auto")
+}
 
 # Fisher-Pearson sample skewness (subsampled to 5,000 for high-performance profiling)
 calc_skewness <- function(x) {
@@ -704,13 +744,23 @@ compute_categorical_profile <- function(df_proc, cat_cols, n_rows) {
   if (length(cat_cols) == 0) return(data.frame())
   data.table::rbindlist(lapply(cat_cols, function(v) {
     vals <- as.character(df_proc[[v]])
-    tab <- sort(table(vals, useNA = "no"), decreasing = TRUE)
+    valid <- vals[!is.na(vals) & vals != ""]
+    if (length(valid) == 0) {
+      return(list(
+        Variable       = v,
+        Total_Levels   = 0L,
+        Top_Categories = "-"
+      ))
+    }
+    # Fast multi-threaded tally with data.table
+    dt_v <- data.table::data.table(val = valid)
+    tab <- dt_v[, .N, by = val][order(-N)]
     top_k <- head(tab, 5)
-    k_str <- paste(sprintf("%s: %s (%.1f%%)", names(top_k), format(as.numeric(top_k), big.mark = ","), 100 * as.numeric(top_k) / max(1, n_rows)), collapse = "; ")
-    if (length(tab) > 5) k_str <- paste0(k_str, sprintf(" [and %d more levels]", length(tab) - 5))
+    k_str <- paste(sprintf("%s: %s (%.1f%%)", top_k$val, format(top_k$N, big.mark = ","), 100 * top_k$N / max(1, n_rows)), collapse = "; ")
+    if (nrow(tab) > 5) k_str <- paste0(k_str, sprintf(" [and %d more levels]", nrow(tab) - 5))
     list(
       Variable       = v,
-      Total_Levels   = length(tab),
+      Total_Levels   = nrow(tab),
       Top_Categories = k_str
     )
   }))
@@ -856,12 +906,17 @@ profile_dataset <- function(df, type_overrides = list(), lazy = FALSE) {
   # Data Quality & Hygiene Screening
   hygiene_flags <- check_hygiene_flags(df_proc, col_inv, num_summary, duplicates_n = n_duplicates)
   
+  full_rows <- if (!is.null(attr(df, "full_n_rows"))) attr(df, "full_n_rows") else n_rows
+  is_sampled <- isTRUE(attr(df, "is_sampled")) || (full_rows > n_rows)
+  
   list(
     rows          = n_rows,
+    full_rows     = full_rows,
+    is_sampled    = is_sampled,
     cols          = n_cols,
     duplicates    = n_duplicates,
     missing_rate  = missing_rate,
-    memory        = format(object.size(df_proc), units = "auto"),
+    memory        = format_fast_memory_size(df_proc),
     inventory     = col_inv,
     num_cols      = num_cols,
     cat_cols      = cat_cols,
@@ -914,9 +969,13 @@ generate_text_report <- function(file_name, p, df = NULL) {
   add_l("")
   
   # SECTION 1: OVERVIEW METRICS
-  add_box("SECTION 1: OVERVIEW METRICS")
-  add_l("Total Observations (Rows) : %s", format(p$rows, big.mark = ","))
-  add_l("Total Features (Columns)  : %s", format(p$cols, big.mark = ","))
+  obs_str <- if (isTRUE(p$is_sampled) && !is.null(p$full_rows)) {
+    sprintf("%s (Sampled from %s total rows)", format(p$rows, big.mark = ","), format(p$full_rows, big.mark = ","))
+  } else {
+    format(p$rows, big.mark = ",")
+  }
+  add_l("Total Rows                : %s", obs_str)
+  add_l("Total Columns             : %s", format(p$cols, big.mark = ","))
   add_l("In-Memory Footprint       : %s", p$memory)
   add_l("Total Duplicate Rows      : %s", format(p$duplicates, big.mark = ","))
   add_l("Overall Missing Cell Rate : %.2f%%", p$missing_rate)
@@ -1115,7 +1174,7 @@ generate_html_report <- function(file_name, p, df = NULL) {
       header_ths, matrix_rows
     )
   } else {
-    "<div style='color:#86868B; padding:16px;'>Insufficient numeric variables to compute correlation matrix.</div>"
+    "<div style='color:#86868B; padding:16px;'>Insufficient numeric columns to compute correlation matrix.</div>"
   }
   
   # Build FASTA database breakdown HTML (if FASTA format)
@@ -1164,8 +1223,8 @@ generate_html_report <- function(file_name, p, df = NULL) {
   } else {
     kpi_grid_html <- sprintf(
       '<div class="kpi-grid">
-         <div class="kpi-card"><div class="kpi-label">Observations (N)</div><div class="kpi-val">%s</div></div>
-         <div class="kpi-card"><div class="kpi-label">Variables (P)</div><div class="kpi-val">%s</div></div>
+         <div class="kpi-card"><div class="kpi-label">Rows</div><div class="kpi-val">%s</div></div>
+         <div class="kpi-card"><div class="kpi-label">Columns</div><div class="kpi-val">%s</div></div>
          <div class="kpi-card"><div class="kpi-label">Memory Footprint</div><div class="kpi-val">%s</div></div>
          <div class="kpi-card"><div class="kpi-label">Missing Cell Rate</div><div class="kpi-val">%.2f%%</div></div>
          <div class="kpi-card"><div class="kpi-label">Duplicate Rows</div><div class="kpi-val">%s</div></div>
@@ -1218,7 +1277,7 @@ generate_html_report <- function(file_name, p, df = NULL) {
 
     <!-- Categorical Breakdown Table -->
     <div class="card">
-      <div class="card-title">Categorical &amp; Discrete Variables</div>
+      <div class="card-title">Categorical &amp; Discrete Columns</div>
       <div style="overflow-x: auto;">
         <table>
           <thead>
@@ -2134,6 +2193,12 @@ html.shiny-busy .app-busy-indicator {
   display: inline-flex !important;
 }
 
+.app-dropzone.is-loading {
+  border-color: var(--app-blue) !important;
+  background: rgba(0, 113, 227, 0.04) !important;
+}
+
+
 /* Interactive Correlation Matrix Cells */
 .cell-cor-interactive {
   cursor: pointer !important;
@@ -2309,6 +2374,142 @@ html.shiny-busy .app-busy-indicator {
 .skeleton-row:last-child {
   border-bottom: none;
 }
+
+/* Liquid Glass Notification Panel & Toasts */
+#shiny-notification-panel {
+  position: fixed !important;
+  bottom: 24px !important;
+  right: 24px !important;
+  z-index: 999999 !important;
+  width: 380px !important;
+  max-width: calc(100vw - 48px) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 12px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  pointer-events: none !important;
+}
+
+.shiny-notification {
+  position: relative !important;
+  pointer-events: auto !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif !important;
+  -webkit-font-smoothing: antialiased !important;
+  background: rgba(255, 255, 255, 0.82) !important;
+  backdrop-filter: saturate(180%) blur(20px) !important;
+  -webkit-backdrop-filter: saturate(180%) blur(20px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.6) !important;
+  border-left: 4px solid var(--app-blue) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.6) !important;
+  color: var(--app-text) !important;
+  padding: 14px 18px !important;
+  font-size: 13px !important;
+  line-height: 1.45 !important;
+  margin: 0 !important;
+  box-sizing: border-box !important;
+  transition: all 0.25s ease !important;
+  animation: app-toast-enter 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+}
+
+[data-theme='dark'] .shiny-notification {
+  background: rgba(28, 28, 30, 0.82) !important;
+  backdrop-filter: saturate(180%) blur(20px) !important;
+  -webkit-backdrop-filter: saturate(180%) blur(20px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-left: 4px solid var(--app-blue) !important;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+  color: var(--app-text) !important;
+}
+
+.shiny-notification-warning {
+  border-left-color: #FF9500 !important;
+}
+
+.shiny-notification-error {
+  border-left-color: #FF3B30 !important;
+}
+
+.shiny-notification-message {
+  border-left-color: var(--app-blue) !important;
+}
+
+.shiny-notification-close {
+  position: absolute !important;
+  top: 10px !important;
+  right: 12px !important;
+  color: var(--app-text-secondary) !important;
+  opacity: 0.6 !important;
+  font-size: 16px !important;
+  font-weight: 400 !important;
+  cursor: pointer !important;
+  border: none !important;
+  background: transparent !important;
+  transition: opacity 0.15s ease, transform 0.15s ease !important;
+  line-height: 1 !important;
+}
+
+.shiny-notification-close:hover {
+  opacity: 1 !important;
+  color: var(--app-text) !important;
+  transform: scale(1.15) !important;
+}
+
+.shiny-notification-content {
+  padding-right: 18px !important;
+  font-family: inherit !important;
+}
+
+.shiny-notification .progress {
+  height: 5px !important;
+  background: rgba(0, 113, 227, 0.12) !important;
+  border-radius: 980px !important;
+  overflow: hidden !important;
+  margin-top: 10px !important;
+  margin-bottom: 2px !important;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.04) !important;
+}
+
+[data-theme='dark'] .shiny-notification .progress {
+  background: rgba(255, 255, 255, 0.1) !important;
+}
+
+.shiny-notification .progress-bar {
+  background: linear-gradient(90deg, #0071E3, #409CFF) !important;
+  border-radius: 980px !important;
+  transition: width 0.3s ease !important;
+}
+
+[data-theme='dark'] .shiny-notification .progress-bar {
+  background: linear-gradient(90deg, #0A84FF, #64D2FF) !important;
+}
+
+.shiny-progress-text {
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  color: var(--app-text) !important;
+  font-family: inherit !important;
+}
+
+.shiny-progress-text .progress-detail {
+  font-size: 12px !important;
+  font-weight: 400 !important;
+  color: var(--app-text-secondary) !important;
+  margin-top: 2px !important;
+}
+
+@keyframes app-toast-enter {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
 "
 
 ui <- fluidPage(
@@ -2372,8 +2573,82 @@ ui <- fluidPage(
         window.syncIngestionHeight = syncIngestionHeight;
         window.addEventListener('resize', syncIngestionHeight);
 
+        var originalDropzoneHtml = null;
+        var uploadPollTimer = null;
+
+        function formatBytes(bytes) {
+          if (!bytes || bytes <= 0) return '0 B';
+          var k = 1024;
+          var sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+          var i = Math.floor(Math.log(bytes) / Math.log(k));
+          return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+        }
+
+        function showImmediateLoading(file) {
+          if (!file) return;
+          var fileName = file.name || 'Dataset';
+          var fileSize = formatBytes(file.size);
+
+          // 1. Update dropzone UI immediately
+          var dropzone = document.getElementById('app_dropzone');
+          if (dropzone) {
+            if (!originalDropzoneHtml) {
+              originalDropzoneHtml = dropzone.innerHTML;
+            }
+            dropzone.classList.add('is-loading');
+            dropzone.innerHTML = 
+              '<div class=\"spinner-border\" role=\"status\" style=\"width: 26px; height: 26px; border-width: 2.5px; color: var(--app-blue); margin-bottom: 8px;\"></div>' +
+              '<div style=\"font-size: 13px; font-weight: 600; color: var(--app-text);\">Loading data...</div>' +
+              '<div style=\"font-size: 11px; color: #0071E3; margin-top: 4px; font-weight: 500; word-break: break-all;\">' + fileName + ' (' + fileSize + ')</div>' +
+              '<div id=\"dropzone_upload_meta\" style=\"font-size: 10px; color: #86868B; margin-top: 2px;\">Uploading file, please wait...</div>' +
+              '<div style=\"margin-top: 10px; width: 100%; height: 4px; background: rgba(0, 113, 227, 0.15); border-radius: 980px; overflow: hidden;\">' +
+                '<div id=\"dropzone_progress_bar\" style=\"width: 15%; height: 100%; background: #0071E3; transition: width 0.25s ease;\"></div>' +
+              '</div>';
+          }
+
+          // 2. Update header status badge immediately
+          var headerStatus = document.getElementById('ui_header_status');
+          if (headerStatus) {
+            headerStatus.innerHTML = 
+              '<span style=\"font-size: 12px; color: #0071E3; background: rgba(0, 113, 227, 0.1); padding: 4px 10px; border-radius: 980px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px;\">' +
+                '<span class=\"spinner-border spinner-border-sm\" style=\"width: 11px; height: 11px; border-width: 1.5px;\"></span>' +
+                'Loading: ' + (fileName.length > 20 ? fileName.substring(0, 17) + '...' : fileName) +
+              '</span>';
+          }
+
+          // 3. Poll Shiny upload progress bar
+          if (uploadPollTimer) clearInterval(uploadPollTimer);
+          uploadPollTimer = setInterval(function() {
+            var bar = document.querySelector('#file_upload_progress .progress-bar, .shiny-file-input-progress .progress-bar');
+            var dropBar = document.getElementById('dropzone_progress_bar');
+            var dropMeta = document.getElementById('dropzone_upload_meta');
+            if (bar) {
+              var widthPct = bar.style.width || (bar.getAttribute('aria-valuenow') ? bar.getAttribute('aria-valuenow') + '%' : '');
+              if (widthPct) {
+                if (dropBar) dropBar.style.width = widthPct;
+                if (widthPct === '100%') {
+                  if (dropMeta) dropMeta.textContent = 'Ingesting & profiling dataset...';
+                }
+              }
+            }
+          }, 150);
+        }
+
+        function hideImmediateLoading() {
+          if (uploadPollTimer) {
+            clearInterval(uploadPollTimer);
+            uploadPollTimer = null;
+          }
+          var dropzone = document.getElementById('app_dropzone');
+          if (dropzone && originalDropzoneHtml) {
+            dropzone.innerHTML = originalDropzoneHtml;
+            dropzone.classList.remove('is-loading');
+          }
+        }
+
         function handleDroppedFiles(files) {
           if (!files || files.length === 0) return;
+          showImmediateLoading(files[0]);
           var fileInput = document.getElementById('file_upload');
           if (!fileInput) return;
           fileInput.value = '';
@@ -2399,6 +2674,19 @@ ui <- fluidPage(
           var dropzone = document.getElementById('app_dropzone') || document.querySelector('.app-dropzone');
           if (!dropzone || dropzone._dragInitialized) return;
           dropzone._dragInitialized = true;
+          if (!originalDropzoneHtml) {
+            originalDropzoneHtml = dropzone.innerHTML;
+          }
+
+          var fileInput = document.getElementById('file_upload');
+          if (fileInput && !fileInput._changeBound) {
+            fileInput._changeBound = true;
+            fileInput.addEventListener('change', function(e) {
+              if (this.files && this.files.length > 0) {
+                showImmediateLoading(this.files[0]);
+              }
+            });
+          }
 
           // Prevent default browser drag/drop behavior on the entire window (prevents opening file)
           window.addEventListener('dragover', function(e) {
@@ -2480,6 +2768,7 @@ ui <- fluidPage(
         function registerShinyHandlers() {
           if (window.Shiny && window.Shiny.addCustomMessageHandler) {
             Shiny.addCustomMessageHandler('clearFileInput', function(id) {
+              hideImmediateLoading();
               var el = document.getElementById(id);
               if (el) {
                 el.value = '';
@@ -2499,6 +2788,7 @@ ui <- fluidPage(
               document.body.classList.remove('is-fasta');
             });
             Shiny.addCustomMessageHandler('setDatasetState', function(payload) {
+              hideImmediateLoading();
               var hasData = typeof payload === 'object' && payload !== null ? !!payload.hasData : !!payload;
               var isFasta = typeof payload === 'object' && payload !== null ? !!payload.isFasta : false;
               if (hasData) {
@@ -2649,33 +2939,28 @@ ui <- fluidPage(
               class = "app-kpi-grid",
               div(
                 class = "app-kpi-card",
-                div(class = "app-kpi-label", "Observations"),
-                h3(class = "app-kpi-val", textOutput("kpi_rows", inline = TRUE)),
-                div(class = "app-kpi-sub", "Total records (N)")
+                div(class = "app-kpi-label", "Rows"),
+                h3(class = "app-kpi-val", textOutput("kpi_rows", inline = TRUE))
               ),
               div(
                 class = "app-kpi-card",
-                div(class = "app-kpi-label", "Variables"),
-                h3(class = "app-kpi-val", textOutput("kpi_cols", inline = TRUE)),
-                div(class = "app-kpi-sub", "Feature columns (P)")
+                div(class = "app-kpi-label", "Columns"),
+                h3(class = "app-kpi-val", textOutput("kpi_cols", inline = TRUE))
               ),
               div(
                 class = "app-kpi-card",
                 div(class = "app-kpi-label", "Memory"),
-                h3(class = "app-kpi-val", textOutput("kpi_memory", inline = TRUE)),
-                div(class = "app-kpi-sub", "In-RAM footprint")
+                h3(class = "app-kpi-val", textOutput("kpi_memory", inline = TRUE))
               ),
               div(
                 class = "app-kpi-card",
                 div(class = "app-kpi-label", "Missingness"),
-                h3(class = "app-kpi-val", textOutput("kpi_missing", inline = TRUE)),
-                div(class = "app-kpi-sub", "Unrecorded cells")
+                h3(class = "app-kpi-val", textOutput("kpi_missing", inline = TRUE))
               ),
               div(
                 class = "app-kpi-card",
                 div(class = "app-kpi-label", "Duplicates"),
-                h3(class = "app-kpi-val", textOutput("kpi_dups", inline = TRUE)),
-                div(class = "app-kpi-sub", "Exact identical rows")
+                h3(class = "app-kpi-val", textOutput("kpi_dups", inline = TRUE))
               )
             ),
             
@@ -2896,7 +3181,7 @@ server <- function(input, output, session) {
     avg_len <- if (length(lens_c) > 0) round(mean(lens_c), 1) else 0
     min_len <- if (length(lens_c) > 0) min(lens_c) else 0
     max_len <- if (length(lens_c) > 0) max(lens_c) else 0
-    mem_str <- format(object.size(rv$raw_df), units = "auto")
+    mem_str <- format_fast_memory_size(rv$raw_df)
     
     # 1. FASTA KPI Grid
     kpi_grid <- div(
@@ -2916,8 +3201,7 @@ server <- function(input, output, session) {
       div(
         class = "app-kpi-card",
         div(class = "app-kpi-label", "Memory"),
-        h3(class = "app-kpi-val", mem_str),
-        div(class = "app-kpi-sub", "In-RAM footprint")
+        h3(class = "app-kpi-val", mem_str)
       ),
       div(
         class = "app-kpi-card",
@@ -3054,6 +3338,18 @@ server <- function(input, output, session) {
         skip_actual <- attr(df, "skip_rows")
         rv$skip_rows <- if (!is.null(skip_actual)) skip_actual else 0
         
+        # Smart Sampling threshold: if rows > 3,000,000, sample 100,000 rows
+        full_n <- attr(df, "full_n_rows")
+        if (is.null(full_n)) full_n <- nrow(df)
+        
+        if (nrow(df) > 3000000L) {
+          set.seed(42)
+          s_idx <- sort(sample.int(nrow(df), 100000L))
+          df <- df[s_idx, , drop = FALSE]
+          attr(df, "full_n_rows") <- full_n
+          attr(df, "is_sampled")  <- TRUE
+        }
+        
         setProgress(value = 0.7, message = "Classifying columns & screening data...")
         p <- profile_dataset(df, type_overrides = list(), lazy = TRUE)
         
@@ -3074,6 +3370,15 @@ server <- function(input, output, session) {
         if (isTRUE(rv$skip_rows > 0)) {
           showNotification(sprintf("Auto-skipped %d title row(s). Header at row %d.", rv$skip_rows, rv$skip_rows + 1),
                            type = "message", duration = 4)
+        }
+        
+        if (isTRUE(p$is_sampled)) {
+          showNotification(
+            sprintf("Large dataset (%s rows) — Sampled %s random rows for fast profiling.",
+                    format(p$full_rows, big.mark = ","),
+                    format(p$rows, big.mark = ",")),
+            type = "message", duration = 6
+          )
         }
         
         setProgress(value = 1.0, message = "Complete!")
@@ -3196,6 +3501,12 @@ server <- function(input, output, session) {
         if (isTRUE(rv$skip_rows > 0)) {
           div(style = "color: #0071E3; font-weight: 500; font-size: 11px; margin-top: 4px;",
               sprintf("Header at row %d (Skipped %d title rows)", rv$skip_rows + 1, rv$skip_rows))
+        },
+        if (isTRUE(rv$profile$is_sampled) && !is.null(rv$profile$full_rows)) {
+          div(style = "color: #0071E3; font-weight: 500; font-size: 11px; margin-top: 4px;",
+              sprintf("⚡ Sampled %s of %s rows",
+                      format(rv$profile$rows, big.mark = ","),
+                      format(rv$profile$full_rows, big.mark = ",")))
         }
       )
     }
@@ -3256,7 +3567,14 @@ server <- function(input, output, session) {
   )
   
   # Metric KPI Cards
-  output$kpi_rows    <- renderText({ if (is.null(rv$profile)) "-" else format(rv$profile$rows, big.mark = ",") })
+  output$kpi_rows    <- renderText({
+    if (is.null(rv$profile)) return("-")
+    if (isTRUE(rv$profile$is_sampled) && !is.null(rv$profile$full_rows)) {
+      sprintf("%s (Sample)", format(rv$profile$rows, big.mark = ","))
+    } else {
+      format(rv$profile$rows, big.mark = ",")
+    }
+  })
   output$kpi_cols    <- renderText({ if (is.null(rv$profile)) "-" else format(rv$profile$cols, big.mark = ",") })
   output$kpi_memory  <- renderText({ if (is.null(rv$profile)) "-" else rv$profile$memory })
   output$kpi_missing <- renderText({ if (is.null(rv$profile)) "-" else paste0(rv$profile$missing_rate, "%") })
@@ -3566,7 +3884,7 @@ server <- function(input, output, session) {
     }
     c_mat <- cor_res$matrix
     if (is.null(c_mat)) {
-      return(div(style = "padding: 20px; color: #86868B; text-align: center;", "Insufficient numeric variables to construct correlation matrix."))
+      return(div(style = "padding: 20px; color: #86868B; text-align: center;", "Insufficient numeric columns to construct correlation matrix."))
     }
     
     vars <- colnames(c_mat)
@@ -3714,8 +4032,10 @@ server <- function(input, output, session) {
     q <- search_debounced()
     if (!is.null(q) && nzchar(trimws(q))) {
       q_clean <- trimws(q)
+      # Fast vectorized search: use fixed=TRUE if no regex characters for 5-10x faster Boyer-Moore search
+      is_regex <- grepl("[.\\\\+*?\\[^\\]$(){}=!<>|:-]", q_clean)
       col_matches <- lapply(df, function(col) {
-        grepl(q_clean, as.character(col), ignore.case = TRUE)
+        grepl(q_clean, as.character(col), ignore.case = TRUE, fixed = !is_regex)
       })
       matched_rows <- Reduce(`|`, col_matches)
       df <- df[matched_rows, , drop = FALSE]
@@ -3755,6 +4075,13 @@ server <- function(input, output, session) {
       return("Waiting for data upload...")
     }
     total_n <- nrow(rv$raw_df)
+    is_smp  <- isTRUE(rv$profile$is_sampled) && !is.null(rv$profile$full_rows)
+    total_str <- if (is_smp) {
+      sprintf("%s rows (Sampled from %s total rows)", format(total_n, big.mark = ","), format(rv$profile$full_rows, big.mark = ","))
+    } else {
+      sprintf("%s rows", format(total_n, big.mark = ","))
+    }
+    
     m_df <- matched_preview()
     total_m <- nrow(m_df)
     page_size <- 25
@@ -3770,11 +4097,11 @@ server <- function(input, output, session) {
     
     q <- input$tbl_search
     if (!is.null(q) && nzchar(trimws(q))) {
-      sprintf("Showing rows %d–%d of %s matches for query '%s' (%s total rows)",
-              start_i, end_i, format(total_m, big.mark = ","), q, format(total_n, big.mark = ","))
+      sprintf("Showing rows %d–%d of %s matches for query '%s' (%s)",
+              start_i, end_i, format(total_m, big.mark = ","), q, total_str)
     } else {
-      sprintf("Showing rows %d–%d of %s observations",
-              start_i, end_i, format(total_n, big.mark = ","))
+      sprintf("Showing rows %d–%d of %s",
+              start_i, end_i, total_str)
     }
   })
   
